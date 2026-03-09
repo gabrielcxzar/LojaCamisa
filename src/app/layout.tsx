@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
+
 import "./globals.css";
 
 const manrope = Manrope({
@@ -11,7 +12,12 @@ const manrope = Manrope({
 export const metadata: Metadata = {
   title: "Loja Camisa | Camisas de Time Sob Encomenda",
   description:
-    "Camisas premium de time sob encomenda com processo transparente e entrega confiável.",
+    "Camisas premium de time sob encomenda com processo transparente e entrega confiavel.",
+  icons: {
+    icon: "/gg-favicon.svg",
+    shortcut: "/gg-favicon.svg",
+    apple: "/gg-favicon.svg",
+  },
 };
 
 export default function RootLayout({

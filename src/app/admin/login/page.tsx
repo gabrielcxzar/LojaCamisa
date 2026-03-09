@@ -1,6 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import Image from "next/image";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
@@ -65,13 +66,22 @@ export default function AdminLoginPage() {
             loading ? "opacity-95" : "opacity-100"
           }`}
         >
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
-              Admin
-            </p>
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Image
+                src="/gg-favicon.svg"
+                alt="GG Camisas"
+                width={32}
+                height={32}
+                className="h-8 w-8 rounded-md"
+              />
+              <p className="text-xs uppercase tracking-[0.22em] text-neutral-500">
+                GG Camisas
+              </p>
+            </div>
             <h1 className="text-2xl font-semibold">Acesso ao painel</h1>
             <p className="text-sm text-neutral-500">
-              Entre com suas credenciais seguras.
+              Sistema interno de pedidos.
             </p>
           </div>
           <div className="space-y-4">

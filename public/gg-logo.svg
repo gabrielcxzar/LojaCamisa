@@ -1,0 +1,9 @@
+<svg width="220" height="64" viewBox="0 0 220 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="64" height="64" rx="14" fill="#101010"/>
+  <circle cx="32" cy="32" r="21" fill="#F4F4F4"/>
+  <path d="M19 33C19 25.8 23.7 21 31 21C34.7 21 37.7 22.2 39.8 24.6L36.3 27.8C35 26.3 33.3 25.5 31.2 25.5C26.8 25.5 24 28.5 24 33C24 37.6 26.8 40.5 31.1 40.5C33.7 40.5 35.5 39.7 36.8 38.4V35.7H30.9V31.6H41.5V40.1C39.1 43.1 35.5 45 30.8 45C23.6 45 19 40.2 19 33Z" fill="#101010"/>
+  <path d="M36.2 19.8L38 17.2H43L40.4 21.1L36.2 19.8Z" fill="#36D45E"/>
+
+  <text x="78" y="28" fill="#111111" font-size="19" font-family="Manrope, system-ui, sans-serif" font-weight="700">GG Camisas</text>
+  <text x="78" y="46" fill="#5B5B5B" font-size="12" font-family="Manrope, system-ui, sans-serif">painel simples de pedidos</text>
+</svg>
