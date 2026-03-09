@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 import {
   deleteOrder,
   logAction,
+  updateOrderSaleData,
   updateOrderStatus,
   upsertShipment,
   upsertSupplierOrder,
@@ -54,6 +55,8 @@ export async function updateSupplierInfo(formData: FormData) {
   const session = await requireAdmin();
   const orderId = String(formData.get("orderId") ?? "");
   const supplierId = String(formData.get("supplierId") ?? "");
+  const totalSold = parseNumber(formData.get("totalSold"), 0);
+  const isPersonalUse = formData.get("isPersonalUse") ? 1 : 0;
   const legacyUnitCost = parseNumber(formData.get("unitCost"), 0);
   const legacyTotalCost = parseNumber(formData.get("totalCost"), 0);
   const packageQuantityInput = parseNumber(formData.get("packageQuantity"), 0);
@@ -61,15 +64,45 @@ export async function updateSupplierInfo(formData: FormData) {
   const extraFeesInput = parseNumber(formData.get("extraFees"), 0);
   const paidAt = String(formData.get("paidAt") ?? "");
 
-  if (!orderId || !supplierId) return;
+  if (!orderId) return;
   if (
+    totalSold < 0 ||
     legacyUnitCost < 0 ||
     legacyTotalCost < 0 ||
     packageQuantityInput < 0 ||
     productCostInput < 0 ||
     extraFeesInput < 0
   ) {
-    throw new Error("Valores de custo invalidos.");
+    throw new Error("Valores financeiros invalidos.");
+  }
+  if (!isPersonalUse && totalSold <= 0) {
+    throw new Error("Informe o valor vendido total do pedido.");
+  }
+  if (!isPersonalUse && productCostInput <= 0) {
+    throw new Error("Pedido comercial exige valor pago ao fornecedor.");
+  }
+
+  await updateOrderSaleData({
+    orderId,
+    totalAmount: totalSold,
+    isPersonalUse,
+  });
+
+  if (!supplierId) {
+    if (!isPersonalUse) {
+      throw new Error("Selecione um fornecedor para pedido comercial.");
+    }
+
+    await logAction({
+      userEmail: session.user.email ?? "admin",
+      action: "Atualizou financeiro (uso pessoal)",
+      orderId,
+    });
+
+    revalidatePath(`/admin/pedidos/${orderId}`);
+    revalidatePath("/admin/pedidos");
+    revalidatePath("/admin/financeiro");
+    return;
   }
 
   const quantityRow = await db
@@ -184,7 +217,7 @@ export async function updateSupplierInfo(formData: FormData) {
   });
   await logAction({
     userEmail: session.user.email ?? "admin",
-    action: "Atualizou custos do fornecedor",
+    action: "Atualizou financeiro do pedido",
     orderId,
   });
 

@@ -78,6 +78,7 @@ const schemaSql = `
     payment_type TEXT NOT NULL,
     total_amount DOUBLE PRECISION NOT NULL,
     amount_paid DOUBLE PRECISION NOT NULL,
+    is_personal_use INTEGER NOT NULL DEFAULT 0,
     currency TEXT NOT NULL,
     notes TEXT,
     created_at TEXT NOT NULL,
@@ -86,10 +87,15 @@ const schemaSql = `
     FOREIGN KEY (address_id) REFERENCES addresses(id)
   );
 
+  ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS is_personal_use INTEGER NOT NULL DEFAULT 0;
+
   CREATE TABLE IF NOT EXISTS order_items (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL,
-    product_id TEXT NOT NULL,
+    product_id TEXT,
+    item_name TEXT,
+    item_description TEXT,
     size TEXT NOT NULL,
     quantity INTEGER NOT NULL,
     unit_price DOUBLE PRECISION NOT NULL,
@@ -97,6 +103,13 @@ const schemaSql = `
     FOREIGN KEY (order_id) REFERENCES orders(id),
     FOREIGN KEY (product_id) REFERENCES products(id)
   );
+
+  ALTER TABLE order_items
+    ALTER COLUMN product_id DROP NOT NULL;
+  ALTER TABLE order_items
+    ADD COLUMN IF NOT EXISTS item_name TEXT;
+  ALTER TABLE order_items
+    ADD COLUMN IF NOT EXISTS item_description TEXT;
 
   CREATE TABLE IF NOT EXISTS supplier_orders (
     id TEXT PRIMARY KEY,

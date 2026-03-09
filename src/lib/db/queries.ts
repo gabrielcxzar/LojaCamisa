@@ -32,6 +32,7 @@ export type OrderRow = {
   payment_type: string;
   total_amount: number;
   amount_paid: number;
+  is_personal_use: number;
   currency: string;
   notes: string | null;
   created_at: string;
@@ -119,7 +120,9 @@ type ActionLogRow = {
 type OrderItemRow = {
   id: string;
   order_id: string;
-  product_id: string;
+  product_id: string | null;
+  item_name: string | null;
+  item_description: string | null;
   size: string;
   quantity: number;
   unit_price: number;
@@ -184,7 +187,15 @@ export async function getOrderByCode(code: string) {
     db.prepare<AddressRow>("SELECT * FROM addresses WHERE id = ?").get(order.address_id),
     db
       .prepare<OrderItemRow>(
-        "SELECT oi.*, p.name, p.description FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?",
+        `
+        SELECT
+          oi.*,
+          COALESCE(oi.item_name, p.name, 'Item sem nome') as name,
+          COALESCE(oi.item_description, p.description) as description
+        FROM order_items oi
+        LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = ?
+        `,
       )
       .all(order.id),
     db
@@ -247,7 +258,14 @@ export async function getOrderDetail(orderId: string) {
       db.prepare<AddressRow>("SELECT * FROM addresses WHERE id = ?").get(order.address_id),
       db
         .prepare<OrderItemRow>(
-          "SELECT oi.*, p.name FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ?",
+          `
+          SELECT
+            oi.*,
+            COALESCE(oi.item_name, p.name, 'Item sem nome') as name
+          FROM order_items oi
+          LEFT JOIN products p ON p.id = oi.product_id
+          WHERE oi.order_id = ?
+          `,
         )
         .all(order.id),
       db
@@ -318,13 +336,16 @@ export async function upsertSupplier(data: {
 }
 
 export async function createOrder(data: {
-  productId: string;
+  productId?: string | null;
+  itemName: string;
+  itemDescription?: string | null;
   size: string;
   quantity: number;
   unitPrice: number;
   total: number;
   paymentType: string;
   amountPaid: number;
+  isPersonalUse?: number;
   status?: string;
   notes?: string | null;
   customer: {
@@ -384,7 +405,7 @@ export async function createOrder(data: {
 
     await db
       .prepare(
-        "INSERT INTO orders (id, code, customer_id, address_id, status, payment_type, total_amount, amount_paid, currency, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO orders (id, code, customer_id, address_id, status, payment_type, total_amount, amount_paid, is_personal_use, currency, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         orderId,
@@ -395,6 +416,7 @@ export async function createOrder(data: {
         data.paymentType,
         data.total,
         data.amountPaid,
+        data.isPersonalUse ?? 0,
         "BRL",
         data.notes ?? null,
         nowIso,
@@ -403,12 +425,14 @@ export async function createOrder(data: {
 
     await db
       .prepare(
-        "INSERT INTO order_items (id, order_id, product_id, size, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO order_items (id, order_id, product_id, item_name, item_description, size, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         randomUUID(),
         orderId,
-        data.productId,
+        data.productId ?? null,
+        data.itemName,
+        data.itemDescription ?? null,
         data.size,
         data.quantity,
         data.unitPrice,
@@ -441,6 +465,38 @@ export async function createOrder(data: {
   });
 
   return tx();
+}
+
+export async function updateOrderSaleData(data: {
+  orderId: string;
+  totalAmount: number;
+  isPersonalUse: number;
+}) {
+  const quantityRow = await db
+    .prepare<{ quantity: number }>(
+      "SELECT COALESCE(SUM(quantity), 0) AS quantity FROM order_items WHERE order_id = ?",
+    )
+    .get(data.orderId);
+  const totalQuantity = Number(quantityRow?.quantity ?? 0);
+
+  if (totalQuantity <= 0) {
+    throw new Error("Pedido sem quantidade valida.");
+  }
+
+  const unitPrice = data.totalAmount / totalQuantity;
+  const nowIso = now();
+
+  await db
+    .prepare(
+      "UPDATE orders SET total_amount = ?, is_personal_use = ?, updated_at = ? WHERE id = ?",
+    )
+    .run(data.totalAmount, data.isPersonalUse, nowIso, data.orderId);
+
+  await db
+    .prepare(
+      "UPDATE order_items SET unit_price = ?, total_price = quantity * ? WHERE order_id = ?",
+    )
+    .run(unitPrice, unitPrice, data.orderId);
 }
 
 export async function updateOrderStatus(orderId: string, status: string, note?: string | null) {

@@ -9,6 +9,10 @@ import {
   updateShipmentStatus,
 } from "@/lib/db/queries";
 import { getShipmentTrackingUpdate } from "@/lib/tracking";
+import {
+  mapTrackingStatusToOrderStatus,
+  shouldAdvanceOrderStatus,
+} from "@/lib/tracking/status-map";
 
 function toPositiveInt(input: string | undefined, fallback: number) {
   const value = Number(input);
@@ -83,17 +87,17 @@ async function run(request: Request) {
       });
       updated += 1;
 
-      const statusLower = update.status.toLowerCase();
-      const isDelivered =
-        statusLower.includes("delivered") || statusLower.includes("entregue");
-
-      if (isDelivered && shipment.order_status !== "DELIVERED") {
+      const nextOrderStatus = mapTrackingStatusToOrderStatus(update.status);
+      if (
+        nextOrderStatus &&
+        shouldAdvanceOrderStatus(shipment.order_status, nextOrderStatus)
+      ) {
         await updateOrderStatus(
           shipment.order_id,
-          "DELIVERED",
-          "Entrega confirmada automaticamente",
+          nextOrderStatus,
+          `Status atualizado automaticamente via rastreio: ${update.status}`,
         );
-        delivered += 1;
+        if (nextOrderStatus === "DELIVERED") delivered += 1;
       }
 
       await logAction({

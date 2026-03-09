@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 type ProductOption = {
   id: string;
@@ -11,8 +11,14 @@ type ProductOption = {
   basePrice: number;
 };
 
+type SupplierOption = {
+  id: string;
+  name: string;
+};
+
 type Props = {
   products: ProductOption[];
+  suppliers: SupplierOption[];
 };
 
 function parseNumber(value: string) {
@@ -34,17 +40,21 @@ function defaultPercentByPaymentType(paymentType: string) {
   return 0;
 }
 
-export function NewOrderDetails({ products }: Props) {
+export function NewOrderDetails({ products, suppliers }: Props) {
   const [productMode, setProductMode] = useState<"custom" | "existing">("custom");
   const [productSlug, setProductSlug] = useState("");
-  const [customPrice, setCustomPrice] = useState("");
-  const [unitPrice, setUnitPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
   const [orderTotalInput, setOrderTotalInput] = useState("");
   const [paymentType, setPaymentType] = useState("DEPOSIT_50");
   const [amountPaidPercentInput, setAmountPaidPercentInput] = useState("50.00");
   const [amountPaidInput, setAmountPaidInput] = useState("");
   const [syncSource, setSyncSource] = useState<"percent" | "amount">("percent");
+  const [isPersonalUse, setIsPersonalUse] = useState(false);
+
+  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
+  const [packageQuantityInput, setPackageQuantityInput] = useState("1");
+  const [productCostInput, setProductCostInput] = useState("");
+  const [extraFeesInput, setExtraFeesInput] = useState("0.00");
 
   const productPriceMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -65,22 +75,39 @@ export function NewOrderDetails({ products }: Props) {
       return totalInput / quantityValue;
     }
 
-    if (productMode === "custom") {
-      const custom = parseNumber(customPrice);
-      if (custom > 0) return custom;
-      return parseNumber(unitPrice);
+    if (productMode === "existing") {
+      return productPriceMap.get(productSlug) ?? 0;
     }
 
-    const selectedPrice = productPriceMap.get(productSlug) ?? 0;
-    const customUnit = parseNumber(unitPrice);
-    return customUnit > 0 ? customUnit : selectedPrice;
-  }, [customPrice, orderTotalInput, productMode, productPriceMap, productSlug, quantityValue, unitPrice]);
+    return 0;
+  }, [orderTotalInput, productMode, productPriceMap, productSlug, quantityValue]);
 
   const totalOrder = useMemo(() => {
     const totalInput = parseNumber(orderTotalInput);
     if (totalInput > 0) return totalInput;
     return quantityValue * effectiveUnitPrice;
   }, [effectiveUnitPrice, orderTotalInput, quantityValue]);
+
+  const supplierSummary = useMemo(() => {
+    const packageQuantity = Math.max(
+      1,
+      Math.round(parseNumber(packageQuantityInput) || quantityValue),
+    );
+    const productCost = Math.max(0, parseNumber(productCostInput));
+    const extraFees = Math.max(0, parseNumber(extraFeesInput));
+    const packageFinalCost = productCost + extraFees;
+    const averageUnitCost = packageFinalCost / packageQuantity;
+    const allocatedCost = averageUnitCost * quantityValue;
+
+    return {
+      packageQuantity,
+      productCost,
+      extraFees,
+      packageFinalCost,
+      averageUnitCost,
+      allocatedCost,
+    };
+  }, [extraFeesInput, packageQuantityInput, productCostInput, quantityValue]);
 
   const syncedPaid = useMemo(() => {
     if (syncSource === "percent") {
@@ -153,15 +180,6 @@ export function NewOrderDetails({ products }: Props) {
               placeholder="Descricao (opcional)"
               className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
             />
-            <input
-              name="customPrice"
-              type="number"
-              step="0.01"
-              placeholder="Preco unitario"
-              value={customPrice}
-              onChange={(event) => setCustomPrice(event.target.value)}
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-            />
           </div>
 
           <label className="flex items-center gap-2">
@@ -216,26 +234,18 @@ export function NewOrderDetails({ products }: Props) {
             name="orderTotal"
             type="number"
             step="0.01"
-            placeholder="Valor total do pedido (opcional)"
+            placeholder="Valor vendido total (R$)"
             value={orderTotalInput}
             onChange={(event) => setOrderTotalInput(event.target.value)}
             className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
           />
-          <input
-            name="unitPrice"
-            type="number"
-            step="0.01"
-            placeholder="Preco unitario (opcional, se nao informar total)"
-            value={unitPrice}
-            onChange={(event) => setUnitPrice(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
+          <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
           <input type="hidden" name="amountPaidSource" value={syncSource} />
           <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-            Custo final do produto:{" "}
+            Valor vendido total:{" "}
             <span className="font-semibold">R$ {formatMoney(totalOrder)}</span>
             <br />
-            Custo medio por camisa:{" "}
+            Valor medio por camisa:{" "}
             <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
           </p>
           <select
@@ -266,17 +276,10 @@ export function NewOrderDetails({ products }: Props) {
             onChange={(event) => syncPercentFromAmount(event.target.value)}
             className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
           />
-          <select
-            name="status"
-            defaultValue="AWAITING_SUPPLIER"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          >
-            <option value="AWAITING_PAYMENT">Aguardando pagamento</option>
-            <option value="AWAITING_SUPPLIER">Aguardando fornecedor</option>
-            <option value="PREPARING">Em preparacao</option>
-            <option value="SHIPPED">Enviado</option>
-            <option value="DELIVERED">Entregue</option>
-          </select>
+          <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+            Status e automatico: sem rastreio fica em aguardando, com rastreio vai para enviado e
+            depois atualiza sozinho pelo rastreamento.
+          </p>
           <input
             name="trackingCode"
             placeholder="Codigo de rastreio (opcional)"
@@ -298,12 +301,95 @@ export function NewOrderDetails({ products }: Props) {
             placeholder="Observacoes internas"
             className="min-h-[96px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
           />
+          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+            <input
+              name="isPersonalUse"
+              type="checkbox"
+              checked={isPersonalUse}
+              onChange={(event) => setIsPersonalUse(event.target.checked)}
+            />
+            Uso pessoal (nao entra em faturamento e lucro)
+          </label>
         </div>
       </section>
 
-      <Button type="submit" className="w-full">
+      <section>
+        <h2 className="text-lg font-semibold">Compra com fornecedor</h2>
+        <div className="mt-4 grid gap-4">
+          <select
+            name="supplierId"
+            value={supplierId}
+            onChange={(event) => setSupplierId(event.target.value)}
+            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+          >
+            {suppliers.length === 0 && <option value="">Sem fornecedor cadastrado</option>}
+            {suppliers.map((supplier) => (
+              <option key={supplier.id} value={supplier.id}>
+                {supplier.name}
+              </option>
+            ))}
+          </select>
+          <input
+            name="packageQuantity"
+            type="number"
+            min={1}
+            step="1"
+            value={packageQuantityInput}
+            onChange={(event) => setPackageQuantityInput(event.target.value)}
+            placeholder="Qtd de camisas no pacote"
+            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+          />
+          <input
+            name="productCost"
+            type="number"
+            min={0}
+            step="0.01"
+            value={productCostInput}
+            onChange={(event) => setProductCostInput(event.target.value)}
+            placeholder="Valor pago ao fornecedor (R$)"
+            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+          />
+          <input
+            name="extraFees"
+            type="number"
+            min={0}
+            step="0.01"
+            value={extraFeesInput}
+            onChange={(event) => setExtraFeesInput(event.target.value)}
+            placeholder="Taxa paga (R$)"
+            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+          />
+          <input
+            name="paidAt"
+            type="date"
+            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+          />
+          <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+            Custo final do pacote:{" "}
+            <span className="font-semibold">
+              R$ {formatMoney(supplierSummary.packageFinalCost)}
+            </span>
+            <br />
+            Custo medio por camisa:{" "}
+            <span className="font-semibold">
+              R$ {formatMoney(supplierSummary.averageUnitCost)}
+            </span>
+            <br />
+            Custo alocado neste pedido:{" "}
+            <span className="font-semibold">
+              R$ {formatMoney(supplierSummary.allocatedCost)}
+            </span>
+          </p>
+          <p className="text-xs text-neutral-500">
+            Pedido comercial exige valor pago ao fornecedor. Em uso pessoal, esse campo pode ficar
+            zerado.
+          </p>
+        </div>
+      </section>
+
+      <SubmitButton pendingLabel="Criando pedido..." className="w-full">
         Criar pedido
-      </Button>
+      </SubmitButton>
     </div>
   );
 }

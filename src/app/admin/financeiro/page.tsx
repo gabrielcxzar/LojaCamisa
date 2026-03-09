@@ -52,41 +52,53 @@ export default async function FinanceiroPage() {
       .prepare<FinanceSummaryRow>(
         `
         SELECT
-          COALESCE(SUM(o.total_amount), 0) as total_sales,
+          COALESCE(SUM(CASE WHEN o.is_personal_use = 0 THEN o.total_amount ELSE 0 END), 0) as total_sales,
           COALESCE((
             SELECT SUM(p.amount)
             FROM payments p
+            JOIN orders o2 ON o2.id = p.order_id
             WHERE p.direction = 'INCOMING'
+              AND o2.is_personal_use = 0
           ), 0) as total_received,
           COALESCE((
             SELECT SUM(p.amount)
             FROM payments p
+            JOIN orders o2 ON o2.id = p.order_id
             WHERE p.direction = 'OUTGOING'
+              AND o2.is_personal_use = 0
           ), 0) as total_paid_supplier,
           COALESCE((
             SELECT COUNT(*)
             FROM payments p
+            JOIN orders o2 ON o2.id = p.order_id
             WHERE p.direction = 'INCOMING'
+              AND o2.is_personal_use = 0
           ), 0) as incoming_count,
-          COALESCE(SUM(CASE WHEN o.created_at >= ? AND o.created_at < ? THEN o.total_amount ELSE 0 END), 0) as monthly_total_sales,
+          COALESCE(SUM(CASE WHEN o.is_personal_use = 0 AND o.created_at >= ? AND o.created_at < ? THEN o.total_amount ELSE 0 END), 0) as monthly_total_sales,
           COALESCE((
             SELECT SUM(p.amount)
             FROM payments p
+            JOIN orders o2 ON o2.id = p.order_id
             WHERE p.direction = 'OUTGOING'
+              AND o2.is_personal_use = 0
               AND p.created_at >= ?
               AND p.created_at < ?
           ), 0) as monthly_total_paid_supplier,
           COALESCE((
             SELECT SUM(p.amount)
             FROM payments p
+            JOIN orders o2 ON o2.id = p.order_id
             WHERE p.direction = 'INCOMING'
+              AND o2.is_personal_use = 0
               AND p.created_at >= ?
               AND p.created_at < ?
           ), 0) as monthly_total_incoming,
           COALESCE((
             SELECT COUNT(*)
             FROM payments p
+            JOIN orders o2 ON o2.id = p.order_id
             WHERE p.direction = 'INCOMING'
+              AND o2.is_personal_use = 0
               AND p.created_at >= ?
               AND p.created_at < ?
           ), 0) as monthly_incoming_count

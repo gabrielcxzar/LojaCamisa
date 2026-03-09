@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { redirect } from "next/navigation";
 
 import { requireAdmin } from "@/lib/require-admin";
@@ -9,23 +7,14 @@ import {
   getProductBySlug,
   logAction,
   updateOrderStatus,
-  upsertProduct,
   upsertShipment,
+  upsertSupplierOrder,
 } from "@/lib/db/queries";
 
 function normalizeNumber(value: FormDataEntryValue | null, fallback = 0) {
   if (value === null || value === "") return fallback;
   const num = Number(value);
   return Number.isFinite(num) ? num : fallback;
-}
-
-function slugify(value: string) {
-  return value
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/(^-|-$)+/g, "");
 }
 
 export async function createOrderManual(formData: FormData) {
@@ -38,18 +27,23 @@ export async function createOrderManual(formData: FormData) {
   const customTeam = String(formData.get("customTeam") ?? "").trim();
   const customModel = String(formData.get("customModel") ?? "").trim();
   const customDescription = String(formData.get("customDescription") ?? "").trim();
-  const customPrice = normalizeNumber(formData.get("customPrice"), 0);
 
   const size = String(formData.get("size") ?? "").trim();
   const quantity = normalizeNumber(formData.get("quantity"), 1);
   const orderTotalInput = normalizeNumber(formData.get("orderTotal"), 0);
-  const unitPrice = normalizeNumber(formData.get("unitPrice"), 0);
+  const unitPriceInput = normalizeNumber(formData.get("unitPrice"), 0);
   const paymentType = String(formData.get("paymentType") ?? "NONE");
   const amountPaidInput = normalizeNumber(formData.get("amountPaid"), -1);
   const amountPaidPercentInput = normalizeNumber(formData.get("amountPaidPercent"), -1);
   const amountPaidSource = String(formData.get("amountPaidSource") ?? "").trim();
-  const status = String(formData.get("status") ?? "AWAITING_SUPPLIER");
   const notes = String(formData.get("notes") ?? "").trim();
+  const isPersonalUse = formData.get("isPersonalUse") ? 1 : 0;
+
+  const supplierId = String(formData.get("supplierId") ?? "").trim();
+  const packageQuantityInput = normalizeNumber(formData.get("packageQuantity"), 0);
+  const productCostInput = normalizeNumber(formData.get("productCost"), 0);
+  const extraFeesInput = normalizeNumber(formData.get("extraFees"), 0);
+  const paidAt = String(formData.get("paidAt") ?? "").trim();
 
   const trackingCode = String(formData.get("trackingCode") ?? "").trim();
   const carrier = String(formData.get("carrier") ?? "").trim();
@@ -73,76 +67,82 @@ export async function createOrderManual(formData: FormData) {
   if (!allowedPayment.includes(paymentType)) {
     throw new Error("Tipo de pagamento invalido.");
   }
-  const allowedStatus = [
-    "AWAITING_PAYMENT",
-    "AWAITING_SUPPLIER",
-    "PREPARING",
-    "SHIPPED",
-    "DELIVERED",
-    "CANCELED",
-  ];
-  if (!allowedStatus.includes(status)) {
-    throw new Error("Status invalido.");
-  }
 
-  let productId = "";
-  let finalUnitPrice = unitPrice;
   const qty = quantity > 0 ? quantity : 1;
+  let productId: string | null = null;
+  let itemName = "Camisa de time sob encomenda";
+  let itemDescription: string | null = null;
+  let finalUnitPrice = unitPriceInput;
+  let finalNotes = notes || null;
 
   if (productMode === "existing") {
     if (!productSlug) {
       throw new Error("Selecione um produto do catalogo.");
     }
+
     const product = await getProductBySlug(productSlug);
     if (!product) {
       throw new Error("Produto selecionado invalido.");
     }
+
     productId = product.id;
-    if (!finalUnitPrice || finalUnitPrice <= 0) {
-      finalUnitPrice = Number(product.base_price);
-    }
-    if (finalUnitPrice <= 0 && orderTotalInput > 0) {
-      finalUnitPrice = orderTotalInput / qty;
+    itemName = product.name;
+    itemDescription = product.description;
+
+    if (finalUnitPrice <= 0) {
+      finalUnitPrice = orderTotalInput > 0 ? orderTotalInput / qty : Number(product.base_price);
     }
   } else {
     const finalName = customName || "Camisa de time sob encomenda";
     const finalTeam = customTeam || "Time nao informado";
     const finalModel = customModel || "Sem modelo";
-    const finalDescription = customDescription || "Pedido rapido criado no painel.";
-    finalUnitPrice = customPrice > 0 ? customPrice : finalUnitPrice;
+
+    itemName = finalName;
+    itemDescription = [finalTeam, finalModel, customDescription].filter(Boolean).join(" | ");
 
     if (finalUnitPrice <= 0 && orderTotalInput > 0) {
       finalUnitPrice = orderTotalInput / qty;
     }
 
-    if (finalUnitPrice <= 0) {
-      throw new Error("Informe o valor total do pedido ou preco unitario da camisa.");
-    }
-
-    const slugBase = slugify(`${finalTeam}-${finalModel}-${finalName}`) || "camisa";
-    productId = await upsertProduct({
-      name: finalName,
-      team: finalTeam,
-      model: finalModel,
-      description: finalDescription,
-      slug: `${slugBase}-${randomUUID().slice(0, 8)}`,
-      basePrice: finalUnitPrice,
-    });
+    const quickDetails = [
+      `Item: ${finalName}`,
+      `Time: ${finalTeam}`,
+      `Modelo: ${finalModel}`,
+      customDescription ? `Descricao: ${customDescription}` : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+    finalNotes = finalNotes
+      ? `${finalNotes}\n\n[Pedido rapido] ${quickDetails}`
+      : `[Pedido rapido] ${quickDetails}`;
   }
 
   if (finalUnitPrice <= 0 && orderTotalInput > 0) {
     finalUnitPrice = orderTotalInput / qty;
   }
-  if (finalUnitPrice <= 0) {
-    throw new Error("Preco unitario invalido. Informe total do pedido ou preco unitario.");
+
+  let total = orderTotalInput > 0 ? orderTotalInput : finalUnitPrice * qty;
+  if (isPersonalUse && orderTotalInput <= 0) {
+    finalUnitPrice = 0;
+    total = 0;
   }
-  const total = orderTotalInput > 0 ? orderTotalInput : finalUnitPrice * qty;
-  if (total <= 0) {
-    throw new Error("Total do pedido invalido.");
+
+  if (!isPersonalUse && finalUnitPrice <= 0) {
+    throw new Error("Informe o valor vendido total para calcular o pedido.");
   }
+  if (!isPersonalUse && total <= 0) {
+    throw new Error("Valor vendido invalido.");
+  }
+
+  if (!isPersonalUse && productCostInput <= 0) {
+    throw new Error("Informe o valor pago ao fornecedor para pedido comercial.");
+  }
+  if (!isPersonalUse && !supplierId) {
+    throw new Error("Selecione um fornecedor para pedido comercial.");
+  }
+
   let amountPaid =
     paymentType === "FULL" ? total : paymentType === "DEPOSIT_50" ? total * 0.5 : 0;
-
   if (amountPaidSource === "percent" && amountPaidPercentInput >= 0) {
     amountPaid = total * (amountPaidPercentInput / 100);
   } else if (amountPaidInput >= 0) {
@@ -157,14 +157,16 @@ export async function createOrderManual(formData: FormData) {
 
   const { orderId } = await createOrder({
     productId,
+    itemName,
+    itemDescription,
     size,
     quantity: qty,
     unitPrice: finalUnitPrice,
     total,
     paymentType,
     amountPaid,
-    status,
-    notes: notes || null,
+    isPersonalUse,
+    notes: finalNotes,
     customer: { name, email, phone: phone || null },
     address: {
       line1,
@@ -175,6 +177,25 @@ export async function createOrderManual(formData: FormData) {
       country,
     },
   });
+
+  const hasSupplierValues = productCostInput > 0 || extraFeesInput > 0;
+  if (supplierId && (hasSupplierValues || !isPersonalUse)) {
+    const packageQuantity = Math.max(1, Math.round(packageQuantityInput || qty));
+    const packageFinalCost = productCostInput + extraFeesInput;
+    const unitCost = packageFinalCost / packageQuantity;
+    const totalCost = unitCost * qty;
+
+    await upsertSupplierOrder({
+      orderId,
+      supplierId,
+      productCost: productCostInput,
+      extraFees: extraFeesInput,
+      packageQuantity,
+      unitCost,
+      totalCost,
+      paidAt: paidAt || null,
+    });
+  }
 
   if (trackingCode) {
     await upsertShipment({

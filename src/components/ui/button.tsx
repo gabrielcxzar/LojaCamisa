@@ -18,10 +18,10 @@ export function Button({
   return (
     <Comp
       className={clsx(
-        "inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-semibold tracking-wide transition",
+        "inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-semibold tracking-wide transition disabled:cursor-not-allowed disabled:opacity-60",
         "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black",
         variant === "primary" &&
-          "bg-black text-white hover:bg-neutral-800",
+          "bg-black text-white hover:bg-neutral-800 disabled:hover:bg-black",
         variant === "outline" &&
           "border border-neutral-300 text-neutral-900 hover:border-neutral-500",
         variant === "ghost" &&

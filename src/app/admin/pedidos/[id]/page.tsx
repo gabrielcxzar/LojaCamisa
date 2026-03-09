@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { Container } from "@/components/layout/container";
 import { Badge } from "@/components/ui/badge";
+import { SubmitButton } from "@/components/ui/submit-button";
 import {
   getOrderDetail,
   getSetting,
@@ -14,7 +15,6 @@ import { requireAdmin } from "@/lib/require-admin";
 import {
   cancelOrder,
   deleteOrderAction,
-  updateOrderStatusAction,
   updateShipmentInfo,
   updateSupplierInfo,
 } from "@/app/admin/pedidos/[id]/actions";
@@ -125,7 +125,10 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
   return (
     <Container className="space-y-8">
       <div className="flex flex-col gap-3">
-        <Badge tone="accent">{statusLabel[order.status]}</Badge>
+        <div className="flex items-center gap-2">
+          <Badge tone="accent">{statusLabel[order.status]}</Badge>
+          {order.is_personal_use === 1 && <Badge tone="muted">Uso pessoal</Badge>}
+        </div>
         <h1 className="text-2xl font-semibold">
           Pedido {order.code} • {customer.name}
         </h1>
@@ -166,6 +169,10 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
               <div className="flex justify-between text-neutral-500">
                 <span>Tipo de pagamento</span>
                 <span>{order.payment_type}</span>
+              </div>
+              <div className="flex justify-between text-neutral-500">
+                <span>Tipo de pedido</span>
+                <span>{order.is_personal_use === 1 ? "Uso pessoal" : "Comercial"}</span>
               </div>
               {order.notes && (
                 <div className="text-neutral-500">
@@ -261,54 +268,45 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
 
         <div className="space-y-6">
           <div className="rounded-2xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-lg font-semibold">Atualizar status</h2>
-            <form action={updateOrderStatusAction} className="mt-4 space-y-3">
-              <input type="hidden" name="orderId" value={order.id} />
-              <select
-                name="status"
-                defaultValue={order.status}
-                className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
-              >
-                <option value="AWAITING_SUPPLIER">
-                  Aguardando fornecedor
-                </option>
-                <option value="AWAITING_PAYMENT">Aguardando pagamento</option>
-                <option value="PREPARING">Em preparação</option>
-                <option value="SHIPPED">Enviado</option>
-                <option value="DELIVERED">Entregue</option>
-                <option value="CANCELED">Cancelado</option>
-              </select>
-              <input
-                name="note"
-                placeholder="Observação"
-                className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
-              />
-              <button className="w-full rounded-full bg-black px-4 py-2 text-sm font-semibold text-white">
-                Salvar status
-              </button>
-            </form>
+            <h2 className="text-lg font-semibold">Status do pedido</h2>
+            <p className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
+              O status e automatico e atualizado pelo rastreamento.
+              <br />
+              Sem rastreio: aguardando pagamento/fornecedor. Com rastreio: enviado e atualizacoes
+              automaticas.
+            </p>
             <div className="mt-4 grid gap-3">
               <form action={cancelOrder}>
                 <input type="hidden" name="orderId" value={order.id} />
-                <button className="w-full rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700">
+                <SubmitButton
+                  pendingLabel="Cancelando..."
+                  variant="outline"
+                  className="w-full border-amber-200 bg-amber-50 py-2 text-amber-700 hover:border-amber-300 hover:bg-amber-100 hover:text-amber-800"
+                >
                   Cancelar pedido
-                </button>
+                </SubmitButton>
               </form>
               <form action={deleteOrderAction}>
                 <input type="hidden" name="orderId" value={order.id} />
-                <button className="w-full rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-600">
+                <SubmitButton
+                  pendingLabel="Excluindo..."
+                  variant="outline"
+                  className="w-full border-red-200 bg-red-50 py-2 text-red-600 hover:border-red-300 hover:bg-red-100 hover:text-red-700"
+                >
                   Excluir pedido
-                </button>
+                </SubmitButton>
               </form>
             </div>
           </div>
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-lg font-semibold">Fornecedor</h2>
+            <h2 className="text-lg font-semibold">Financeiro do pedido</h2>
             <SupplierCostForm
               action={updateSupplierInfo}
               orderId={order.id}
               orderQuantity={orderQuantity}
+              totalSold={totalAmount}
+              isPersonalUse={order.is_personal_use === 1}
               suppliers={suppliers.map((supplier) => ({
                 id: supplier.id,
                 name: supplier.name,
@@ -349,9 +347,9 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                 placeholder="País de origem"
                 className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
               />
-              <button className="w-full rounded-full bg-black px-4 py-2 text-sm font-semibold text-white">
+              <SubmitButton pendingLabel="Salvando rastreio..." className="w-full py-2">
                 Registrar rastreamento
-              </button>
+              </SubmitButton>
             </form>
             {shipment && (
               <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
@@ -377,4 +375,6 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
     </Container>
   );
 }
+
+
 

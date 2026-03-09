@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { db } from "@/lib/db";
 import { getSetting, getStalledOrders } from "@/lib/db/queries";
 import { requireAdmin } from "@/lib/require-admin";
+import { isTrackingTaxPending } from "@/lib/tracking/status-map";
 
 const statusLabel: Record<string, string> = {
   AWAITING_PAYMENT: "Aguardando pagamento",
@@ -24,6 +25,7 @@ type DashboardSummaryRow = {
   awaiting_supplier: number;
   preparing: number;
   shipped: number;
+  personal_orders: number;
   monthly_total_sales: number;
   monthly_total_paid_supplier: number;
 };
@@ -37,6 +39,13 @@ type RecentOrder = {
   updated_at: string;
 };
 
+type TaxPendingOrder = {
+  id: string;
+  code: string;
+  customer_name: string;
+  last_status: string | null;
+};
+
 export default async function AdminDashboard() {
   const session = await requireAdmin();
 
@@ -46,7 +55,7 @@ export default async function AdminDashboard() {
   monthEndDate.setUTCMonth(monthEndDate.getUTCMonth() + 1);
   const monthEnd = monthEndDate.toISOString();
 
-  const [summary, stalledSetting] = await Promise.all([
+  const [summary, stalledSetting, shippingOverview, taxPendingOrders] = await Promise.all([
     db
       .prepare<DashboardSummaryRow>(
         `
@@ -57,19 +66,57 @@ export default async function AdminDashboard() {
           COUNT(*) FILTER (WHERE status = 'AWAITING_SUPPLIER') as awaiting_supplier,
           COUNT(*) FILTER (WHERE status = 'PREPARING') as preparing,
           COUNT(*) FILTER (WHERE status = 'SHIPPED') as shipped,
-          COALESCE(SUM(CASE WHEN created_at >= ? AND created_at < ? THEN total_amount ELSE 0 END), 0) as monthly_total_sales,
+          COUNT(*) FILTER (WHERE is_personal_use = 1) as personal_orders,
+          COALESCE(SUM(CASE WHEN is_personal_use = 0 AND created_at >= ? AND created_at < ? THEN total_amount ELSE 0 END), 0) as monthly_total_sales,
           COALESCE((
             SELECT SUM(amount)
-            FROM payments
-            WHERE direction = 'OUTGOING'
-              AND created_at >= ?
-              AND created_at < ?
+            FROM payments p
+            JOIN orders o2 ON o2.id = p.order_id
+            WHERE p.direction = 'OUTGOING'
+              AND o2.is_personal_use = 0
+              AND p.created_at >= ?
+              AND p.created_at < ?
           ), 0) as monthly_total_paid_supplier
         FROM orders
         `,
       )
       .get(monthStart, monthEnd, monthStart, monthEnd),
     getSetting("stalled_days"),
+    db
+      .prepare<{ without_tracking: number; shipping_with_tracking: number }>(
+        `
+        SELECT
+          COUNT(*) FILTER (
+            WHERE o.status IN ('AWAITING_SUPPLIER', 'PREPARING', 'SHIPPED')
+              AND (s.tracking_code IS NULL OR s.tracking_code = '')
+          ) as without_tracking,
+          COUNT(*) FILTER (
+            WHERE o.status IN ('AWAITING_SUPPLIER', 'PREPARING', 'SHIPPED')
+              AND s.tracking_code IS NOT NULL
+              AND s.tracking_code <> ''
+          ) as shipping_with_tracking
+        FROM orders o
+        LEFT JOIN shipments s ON s.order_id = o.id
+        `,
+      )
+      .get(),
+    db
+      .prepare<TaxPendingOrder>(
+        `
+        SELECT
+          o.id,
+          o.code,
+          c.name as customer_name,
+          s.last_status
+        FROM orders o
+        JOIN customers c ON c.id = o.customer_id
+        JOIN shipments s ON s.order_id = o.id
+        WHERE o.status IN ('PREPARING', 'SHIPPED')
+        ORDER BY o.updated_at DESC
+        LIMIT 40
+        `,
+      )
+      .all(),
   ]);
 
   const totalOrders = Number(summary?.total_orders ?? 0);
@@ -78,6 +125,7 @@ export default async function AdminDashboard() {
   const awaiting = Number(summary?.awaiting_supplier ?? 0);
   const preparing = Number(summary?.preparing ?? 0);
   const shipped = Number(summary?.shipped ?? 0);
+  const personalOrders = Number(summary?.personal_orders ?? 0);
 
   const monthlyTotalSales = Number(summary?.monthly_total_sales ?? 0);
   const monthlyPaidSupplier = Number(summary?.monthly_total_paid_supplier ?? 0);
@@ -86,6 +134,11 @@ export default async function AdminDashboard() {
 
   const stalledDays = stalledSetting ? Number(stalledSetting.value) : 7;
   const stalledOrders = await getStalledOrders(stalledDays);
+  const withoutTracking = Number(shippingOverview?.without_tracking ?? 0);
+  const shippingWithTracking = Number(shippingOverview?.shipping_with_tracking ?? 0);
+  const taxPendingList = taxPendingOrders.filter((order) =>
+    isTrackingTaxPending(order.last_status),
+  );
 
   const recentOrders = await db
     .prepare<RecentOrder>(
@@ -128,6 +181,12 @@ export default async function AdminDashboard() {
             Pedidos atrasados ({stalledDays}+ dias)
           </p>
           <p className="mt-3 text-2xl font-semibold">{stalledOrders.length}</p>
+        </div>
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+          <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
+            Pedidos uso pessoal
+          </p>
+          <p className="mt-3 text-2xl font-semibold">{personalOrders}</p>
         </div>
         <div className="rounded-2xl border border-neutral-200 bg-white p-5">
           <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
@@ -229,6 +288,60 @@ export default async function AdminDashboard() {
               </span>
             </Link>
           ))}
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+        <h2 className="text-lg font-semibold">Pendencias operacionais</h2>
+        <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <div className="rounded-xl border border-neutral-200 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
+              Aguardando pagamento
+            </p>
+            <p className="mt-2 text-xl font-semibold">{awaitingPayment}</p>
+          </div>
+          <div className="rounded-xl border border-neutral-200 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
+              Sem rastreio
+            </p>
+            <p className="mt-2 text-xl font-semibold">{withoutTracking}</p>
+          </div>
+          <div className="rounded-xl border border-neutral-200 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
+              Em transito
+            </p>
+            <p className="mt-2 text-xl font-semibold">{shippingWithTracking}</p>
+          </div>
+          <div className="rounded-xl border border-neutral-200 px-4 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-neutral-400">
+              Possivel taxa
+            </p>
+            <p className="mt-2 text-xl font-semibold">{taxPendingList.length}</p>
+          </div>
+        </div>
+        <div className="mt-4 space-y-3">
+          {taxPendingList.slice(0, 5).map((order) => (
+            <Link
+              key={order.id}
+              href={`/admin/pedidos/${order.id}`}
+              className="flex items-center justify-between rounded-xl border border-neutral-200 px-4 py-3 text-sm hover:border-neutral-400"
+            >
+              <div>
+                <p className="font-semibold">
+                  {order.code} - {order.customer_name}
+                </p>
+                <p className="text-xs text-neutral-500">
+                  Status rastreio: {order.last_status ?? "Sem status"}
+                </p>
+              </div>
+              <Badge tone="muted">Ver pedido</Badge>
+            </Link>
+          ))}
+          {taxPendingList.length === 0 && (
+            <p className="text-sm text-neutral-500">
+              Nenhuma pendencia de taxa identificada no rastreio.
+            </p>
+          )}
         </div>
       </div>
     </Container>

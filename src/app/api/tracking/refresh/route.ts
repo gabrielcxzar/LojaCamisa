@@ -6,6 +6,10 @@ import { db } from "@/lib/db";
 import { logAction, updateOrderStatus, updateShipmentStatus } from "@/lib/db/queries";
 import { authOptions } from "@/lib/auth";
 import { getShipmentTrackingUpdate } from "@/lib/tracking";
+import {
+  mapTrackingStatusToOrderStatus,
+  shouldAdvanceOrderStatus,
+} from "@/lib/tracking/status-map";
 
 export async function POST(request: Request) {
   try {
@@ -39,18 +43,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false });
     }
 
-    const nextStatus = update.status.toLowerCase();
-    const isDelivered =
-      nextStatus.includes("delivered") || nextStatus.includes("entregue");
-
     await updateShipmentStatus(orderId, {
       lastStatus: update.status,
       lastUpdateAt: update.lastUpdateAt?.toISOString() ?? null,
       etaDate: update.etaDate?.toISOString() ?? null,
     });
 
-    if (isDelivered && order.status !== "DELIVERED") {
-      await updateOrderStatus(orderId, "DELIVERED", "Entrega confirmada");
+    const nextOrderStatus = mapTrackingStatusToOrderStatus(update.status);
+    if (
+      nextOrderStatus &&
+      shouldAdvanceOrderStatus(order.status, nextOrderStatus)
+    ) {
+      await updateOrderStatus(
+        orderId,
+        nextOrderStatus,
+        `Status atualizado automaticamente via rastreio: ${update.status}`,
+      );
     }
 
     await logAction({

@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 
+import { SubmitButton } from "@/components/ui/submit-button";
+
 type SupplierOption = {
   id: string;
   name: string;
@@ -21,6 +23,8 @@ type SupplierCostFormProps = {
   action: (formData: FormData) => void | Promise<void>;
   orderId: string;
   orderQuantity: number;
+  totalSold: number;
+  isPersonalUse: boolean;
   suppliers: SupplierOption[];
   initial?: SupplierCostInitialValues;
 };
@@ -38,6 +42,8 @@ export function SupplierCostForm({
   action,
   orderId,
   orderQuantity,
+  totalSold,
+  isPersonalUse,
   suppliers,
   initial,
 }: SupplierCostFormProps) {
@@ -54,44 +60,75 @@ export function SupplierCostForm({
   const defaultExtraFees =
     initial?.extraFees && initial.extraFees > 0 ? toMoney(initial.extraFees) : "0.00";
 
+  const [totalSoldInput, setTotalSoldInput] = useState(toMoney(totalSold));
+  const [personalUseChecked, setPersonalUseChecked] = useState(isPersonalUse);
   const [packageQuantityInput, setPackageQuantityInput] = useState(defaultPackageQuantity);
   const [productCostInput, setProductCostInput] = useState(defaultProductCost);
   const [extraFeesInput, setExtraFeesInput] = useState(defaultExtraFees);
 
   const summary = useMemo(() => {
+    const sold = Math.max(0, toNumber(totalSoldInput));
     const packageQuantity = Math.max(1, Math.round(toNumber(packageQuantityInput)));
     const productCost = Math.max(0, toNumber(productCostInput));
     const extraFees = Math.max(0, toNumber(extraFeesInput));
     const packageFinalCost = productCost + extraFees;
     const averageUnitCost = packageFinalCost / packageQuantity;
     const totalOrderCost = averageUnitCost * Math.max(1, orderQuantity);
+    const estimatedProfit = sold - totalOrderCost;
+    const margin = sold > 0 ? (estimatedProfit / sold) * 100 : 0;
 
     return {
+      sold,
       packageQuantity,
-      productCost,
-      extraFees,
       packageFinalCost,
       averageUnitCost,
       totalOrderCost,
+      estimatedProfit,
+      margin,
     };
-  }, [extraFeesInput, orderQuantity, packageQuantityInput, productCostInput]);
+  }, [extraFeesInput, orderQuantity, packageQuantityInput, productCostInput, totalSoldInput]);
 
   return (
     <form action={action} className="mt-4 space-y-3">
       <input type="hidden" name="orderId" value={orderId} />
       <input type="hidden" name="unitCost" value={toMoney(summary.averageUnitCost)} />
       <input type="hidden" name="totalCost" value={toMoney(summary.totalOrderCost)} />
-      <select
-        name="supplierId"
-        defaultValue={initial?.supplierId ?? suppliers[0]?.id}
+      <input
+        name="totalSold"
+        type="number"
+        min={0}
+        step="0.01"
+        value={totalSoldInput}
+        onChange={(event) => setTotalSoldInput(event.target.value)}
+        placeholder="Valor vendido total (R$)"
         className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
-      >
-        {suppliers.map((supplier) => (
-          <option key={supplier.id} value={supplier.id}>
-            {supplier.name}
-          </option>
-        ))}
-      </select>
+      />
+      <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700">
+        <input
+          name="isPersonalUse"
+          type="checkbox"
+          checked={personalUseChecked}
+          onChange={(event) => setPersonalUseChecked(event.target.checked)}
+        />
+        Uso pessoal (nao entra no faturamento/lucro)
+      </label>
+      {suppliers.length > 0 ? (
+        <select
+          name="supplierId"
+          defaultValue={initial?.supplierId ?? suppliers[0]?.id}
+          className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
+        >
+          {suppliers.map((supplier) => (
+            <option key={supplier.id} value={supplier.id}>
+              {supplier.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          Cadastre um fornecedor para salvar custo de compra.
+        </div>
+      )}
       <input
         name="packageQuantity"
         type="number"
@@ -109,7 +146,7 @@ export function SupplierCostForm({
         step="0.01"
         value={productCostInput}
         onChange={(event) => setProductCostInput(event.target.value)}
-        placeholder="Valor pago no pacote (R$)"
+        placeholder="Valor pago ao fornecedor (R$)"
         className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
       />
       <input
@@ -119,7 +156,7 @@ export function SupplierCostForm({
         step="0.01"
         value={extraFeesInput}
         onChange={(event) => setExtraFeesInput(event.target.value)}
-        placeholder="Taxas do pacote (R$)"
+        placeholder="Taxa paga (R$)"
         className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
       />
       <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
@@ -127,8 +164,10 @@ export function SupplierCostForm({
         <p>Custo final do pacote: R$ {toMoney(summary.packageFinalCost)}</p>
         <p>Custo medio por camisa: R$ {toMoney(summary.averageUnitCost)}</p>
         <p>Custo alocado neste pedido: R$ {toMoney(summary.totalOrderCost)}</p>
+        <p>Lucro estimado do pedido: R$ {toMoney(summary.estimatedProfit)}</p>
+        <p>Margem estimada: {summary.margin.toFixed(1)}%</p>
         <p className="pt-1">
-          Se houver outros pedidos com o mesmo rastreio, o sistema faz rateio automatico.
+          Pedido comercial exige valor pago ao fornecedor. A taxa pode ser editada depois.
         </p>
       </div>
       <input
@@ -137,9 +176,9 @@ export function SupplierCostForm({
         defaultValue={initial?.paidAt ?? ""}
         className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
       />
-      <button className="w-full rounded-full bg-black px-4 py-2 text-sm font-semibold text-white">
-        Salvar fornecedor
-      </button>
+      <SubmitButton pendingLabel="Salvando financeiro..." className="w-full py-2">
+        Salvar financeiro
+      </SubmitButton>
     </form>
   );
 }

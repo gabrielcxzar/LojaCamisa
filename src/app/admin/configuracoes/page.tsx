@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { Container } from "@/components/layout/container";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getSetting } from "@/lib/db/queries";
 import { requireAdmin } from "@/lib/require-admin";
 import { saveSettings } from "@/app/admin/configuracoes/actions";
@@ -69,9 +69,9 @@ export default async function ConfiguracoesPage() {
             className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
           />
         </div>
-        <Button type="submit" className="w-full">
+        <SubmitButton pendingLabel="Salvando configuracoes..." className="w-full">
           Salvar configuracoes
-        </Button>
+        </SubmitButton>
       </form>
     </Container>
   );

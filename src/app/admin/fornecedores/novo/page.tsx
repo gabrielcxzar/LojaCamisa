@@ -1,5 +1,5 @@
 import { Container } from "@/components/layout/container";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { createSupplier } from "@/app/admin/fornecedores/novo/actions";
 import { requireAdmin } from "@/lib/require-admin";
 
@@ -37,9 +37,9 @@ export default async function NewSupplierPage() {
           <input name="active" type="checkbox" defaultChecked />
           Fornecedor ativo
         </label>
-        <Button type="submit" className="w-full">
+        <SubmitButton pendingLabel="Salvando fornecedor..." className="w-full">
           Salvar fornecedor
-        </Button>
+        </SubmitButton>
       </form>
     </Container>
   );

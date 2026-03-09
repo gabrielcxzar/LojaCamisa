@@ -1,12 +1,13 @@
 import { Container } from "@/components/layout/container";
 import { NewOrderDetails } from "@/components/admin/new-order-details";
 import { createOrderManual } from "@/app/admin/pedidos/novo/actions";
-import { listProducts } from "@/lib/db/queries";
+import { listProducts, listSuppliers } from "@/lib/db/queries";
 import { requireAdmin } from "@/lib/require-admin";
 
 export default async function NewOrderPage() {
   await requireAdmin();
-  const products = (await listProducts()).sort((a, b) => a.name.localeCompare(b.name));
+  const [products, suppliers] = await Promise.all([listProducts(), listSuppliers()]);
+  const sortedProducts = products.sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <Container className="space-y-8">
@@ -91,11 +92,15 @@ export default async function NewOrderPage() {
         </div>
 
         <NewOrderDetails
-          products={products.map((product) => ({
+          products={sortedProducts.map((product) => ({
             id: product.id,
             slug: product.slug,
             name: product.name,
             basePrice: Number(product.base_price),
+          }))}
+          suppliers={suppliers.map((supplier) => ({
+            id: supplier.id,
+            name: supplier.name,
           }))}
         />
       </form>
