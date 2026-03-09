@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
@@ -9,7 +8,6 @@ import { Button } from "@/components/ui/button";
 export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
 
   async function handleSubmit(formData: FormData) {
     setError(null);
@@ -22,15 +20,29 @@ export default function AdminLoginPage() {
         email,
         password,
         redirect: false,
+        callbackUrl: "/admin",
       });
 
-      if (result?.error) {
-        setError("Credenciais invalidas.");
+      if (!result) {
+        setError("Falha ao entrar. Tente novamente.");
         return;
       }
 
-      router.push("/admin");
-      router.refresh();
+      if (result.error) {
+        if (result.error === "CredentialsSignin") {
+          setError("Email ou senha invalidos.");
+        } else {
+          setError(`Falha ao entrar (${result.error}).`);
+        }
+        return;
+      }
+
+      if (result.url) {
+        window.location.assign(result.url);
+        return;
+      }
+
+      window.location.assign("/admin");
     } catch {
       setError("Erro ao entrar. Tente novamente.");
     } finally {
