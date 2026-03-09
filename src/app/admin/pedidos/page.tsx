@@ -6,6 +6,7 @@ import { Container } from "@/components/layout/container";
 import { Badge } from "@/components/ui/badge";
 import { listOrders } from "@/lib/db/queries";
 import { requireAdmin } from "@/lib/require-admin";
+import { translateTrackingStatus } from "@/lib/tracking/status-map";
 
 const statusLabel: Record<string, string> = {
   AWAITING_PAYMENT: "Aguardando pagamento",
@@ -113,6 +114,11 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
               </p>
               {order.package_code && (
                 <p className="text-xs text-neutral-500">Pacote: {order.package_code}</p>
+              )}
+              {order.tracking_last_status && (
+                <p className="text-xs text-neutral-500">
+                  Rastreio: {translateTrackingStatus(order.tracking_last_status)}
+                </p>
               )}
               {order.is_personal_use === 1 && (
                 <p className="text-xs text-amber-700">Uso pessoal (fora do financeiro)</p>

@@ -69,6 +69,19 @@ type SupplierRow = {
   updated_at: string;
 };
 
+export type CustomerPresetRow = {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  line1: string;
+  line2: string | null;
+  city: string;
+  state: string;
+  postal_code: string | null;
+  country: string;
+  last_order_at: string;
+};
+
 type ImportPackageRow = {
   id: string;
   code: string;
@@ -92,6 +105,16 @@ type ImportPackageRow = {
 type ImportPackageSummaryRow = ImportPackageRow & {
   supplier_name: string | null;
   linked_orders: number;
+};
+
+export type ImportPackageOrderRow = {
+  order_id: string;
+  code: string;
+  status: string;
+  customer_name: string;
+  quantity: number;
+  total_amount: number;
+  total_cost: number;
 };
 
 type SupplierOrderRow = {
@@ -163,6 +186,7 @@ type OrderItemRow = {
 type ListedOrderRow = OrderRow & {
   customer_name: string;
   package_code: string | null;
+  tracking_last_status: string | null;
 };
 
 type StalledOrderRow = {
@@ -275,11 +299,13 @@ export async function listOrders(filters: {
       SELECT
         o.*,
         c.name as customer_name,
-        p.code as package_code
+        p.code as package_code,
+        s.last_status as tracking_last_status
       FROM orders o
       JOIN customers c ON c.id = o.customer_id
       LEFT JOIN order_packages op ON op.order_id = o.id
       LEFT JOIN import_packages p ON p.id = op.package_id
+      LEFT JOIN shipments s ON s.order_id = o.id
       ${whereClause}
       ORDER BY o.created_at DESC
       `,
@@ -345,6 +371,31 @@ export async function listAllSuppliers() {
   return db.prepare<SupplierRow>("SELECT * FROM suppliers ORDER BY created_at ASC").all();
 }
 
+export async function listCustomerPresets(limit = 80) {
+  return db
+    .prepare<CustomerPresetRow>(
+      `
+      SELECT DISTINCT ON (LOWER(c.name), COALESCE(c.phone, ''))
+        c.name,
+        NULLIF(c.email, '') as email,
+        c.phone,
+        a.line1,
+        a.line2,
+        a.city,
+        a.state,
+        a.postal_code,
+        a.country,
+        o.created_at as last_order_at
+      FROM orders o
+      JOIN customers c ON c.id = o.customer_id
+      JOIN addresses a ON a.id = o.address_id
+      ORDER BY LOWER(c.name), COALESCE(c.phone, ''), o.created_at DESC
+      LIMIT ?
+      `,
+    )
+    .all(limit);
+}
+
 export async function listImportPackages() {
   return db
     .prepare<ImportPackageSummaryRow>(
@@ -400,6 +451,31 @@ export async function getImportPackageByOrderId(orderId: string) {
       `,
     )
     .get(orderId);
+}
+
+export async function listImportPackageOrders(packageId: string) {
+  return db
+    .prepare<ImportPackageOrderRow>(
+      `
+      SELECT
+        o.id as order_id,
+        o.code,
+        o.status,
+        c.name as customer_name,
+        COALESCE(SUM(oi.quantity), 0) as quantity,
+        o.total_amount,
+        COALESCE(so.total_cost, 0) as total_cost
+      FROM order_packages op
+      JOIN orders o ON o.id = op.order_id
+      JOIN customers c ON c.id = o.customer_id
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN supplier_orders so ON so.order_id = o.id
+      WHERE op.package_id = ?
+      GROUP BY o.id, o.code, o.status, c.name, o.total_amount, so.total_cost
+      ORDER BY o.created_at DESC
+      `,
+    )
+    .all(packageId);
 }
 
 export async function upsertImportPackage(data: {

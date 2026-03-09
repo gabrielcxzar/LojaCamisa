@@ -49,6 +49,7 @@ function defaultPercentByPaymentType(paymentType: string) {
 }
 
 export function NewOrderDetails({ products, suppliers, packages }: Props) {
+  const [entryMode, setEntryMode] = useState<"quick" | "advanced">("quick");
   const [productMode, setProductMode] = useState<"custom" | "existing">("custom");
   const [productSlug, setProductSlug] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -68,6 +69,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
   const [productCostInput, setProductCostInput] = useState("");
   const [extraFeesInput, setExtraFeesInput] = useState("0.00");
   const [internalShippingInput, setInternalShippingInput] = useState("0.00");
+  const [showPackageAdvanced, setShowPackageAdvanced] = useState(false);
 
   const productPriceMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -161,69 +163,127 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
     setAmountPaidPercentInput(formatPercent(defaultPercent));
   }
 
+  function handleEntryMode(next: "quick" | "advanced") {
+    setEntryMode(next);
+    if (next === "quick") {
+      setProductMode("custom");
+    }
+  }
+
   return (
     <div className="space-y-8">
       <section>
-        <h2 className="text-lg font-semibold">Camisa</h2>
-        <div className="mt-4 space-y-3 text-sm text-neutral-600">
-          <label className="flex items-center gap-2">
+        <h2 className="text-lg font-semibold">Modo de cadastro</h2>
+        <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 sm:grid-cols-2">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2">
             <input
               type="radio"
-              name="productMode"
-              value="custom"
-              checked={productMode === "custom"}
-              onChange={() => setProductMode("custom")}
+              checked={entryMode === "quick"}
+              onChange={() => handleEntryMode("quick")}
             />
-            Pedido rapido (sem cadastro previo)
+            Modo rapido (recomendado)
           </label>
-          <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2">
             <input
-              name="customName"
-              placeholder="Nome da camisa"
-              defaultValue="Camisa de time sob encomenda"
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              type="radio"
+              checked={entryMode === "advanced"}
+              onChange={() => handleEntryMode("advanced")}
             />
+            Modo completo
+          </label>
+          <p className="sm:col-span-2 text-xs text-neutral-500">
+            No modo rapido, voce preenche apenas o essencial para vender e acompanhar.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold">Camisa</h2>
+        <input
+          type="hidden"
+          name="productMode"
+          value={entryMode === "quick" ? "custom" : productMode}
+        />
+
+        {entryMode === "quick" ? (
+          <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
+            <input type="hidden" name="customName" value="Camisa de time sob encomenda" />
             <input
               name="customTeam"
-              placeholder="Time (opcional)"
+              placeholder="Time (ex: Vitoria)"
               className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
             />
             <input
               name="customModel"
-              placeholder="Modelo (opcional)"
+              placeholder="Modelo (ex: 2025 torcedor)"
               className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
             />
             <input
               name="customDescription"
-              placeholder="Descricao (opcional)"
+              placeholder="Descricao curta (opcional)"
               className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
             />
+            <p className="text-xs text-neutral-500">
+              O sistema salva como pedido rapido sem criar produto no catalogo.
+            </p>
           </div>
+        ) : (
+          <div className="mt-4 space-y-3 text-sm text-neutral-600">
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                checked={productMode === "custom"}
+                onChange={() => setProductMode("custom")}
+              />
+              Pedido rapido (sem cadastro previo)
+            </label>
+            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+              <input
+                name="customName"
+                placeholder="Nome da camisa"
+                defaultValue="Camisa de time sob encomenda"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="customTeam"
+                placeholder="Time (opcional)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="customModel"
+                placeholder="Modelo (opcional)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="customDescription"
+                placeholder="Descricao (opcional)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+            </div>
 
-          <label className="flex items-center gap-2">
-            <input
-              type="radio"
-              name="productMode"
-              value="existing"
-              checked={productMode === "existing"}
-              onChange={() => setProductMode("existing")}
-            />
-            Usar produto do catalogo
-          </label>
-          <select
-            name="productSlug"
-            value={productSlug}
-            onChange={(event) => setProductSlug(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          >
-            <option value="">Selecione (opcional)</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.slug}>
-                {product.name} - R$ {product.basePrice.toFixed(2)}
-              </option>
-            ))}
-          </select>
-        </div>
+            <label className="flex items-center gap-2">
+              <input
+                type="radio"
+                checked={productMode === "existing"}
+                onChange={() => setProductMode("existing")}
+              />
+              Usar produto do catalogo
+            </label>
+            <select
+              name="productSlug"
+              value={productSlug}
+              onChange={(event) => setProductSlug(event.target.value)}
+              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+            >
+              <option value="">Selecione (opcional)</option>
+              {products.map((product) => (
+                <option key={product.id} value={product.slug}>
+                  {product.name} - R$ {product.basePrice.toFixed(2)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
       </section>
 
       <section>
@@ -266,34 +326,47 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
             Valor medio por camisa:{" "}
             <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
           </p>
-          <select
-            name="paymentType"
-            value={paymentType}
-            onChange={(event) => handlePaymentTypeChange(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          >
-            <option value="DEPOSIT_50">50% do valor</option>
-            <option value="FULL">100% do valor</option>
-            <option value="NONE">Apenas reserva</option>
-          </select>
-          <input
-            name="amountPaidPercent"
-            type="number"
-            step="0.01"
-            placeholder="% pago"
-            value={syncSource === "percent" ? amountPaidPercentInput : syncedPaid.percent}
-            onChange={(event) => syncAmountFromPercent(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input
-            name="amountPaid"
-            type="number"
-            step="0.01"
-            placeholder="Valor pago"
-            value={syncSource === "amount" ? amountPaidInput : syncedPaid.amount}
-            onChange={(event) => syncPercentFromAmount(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
+          {!isPersonalUse ? (
+            <>
+              <select
+                name="paymentType"
+                value={paymentType}
+                onChange={(event) => handlePaymentTypeChange(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              >
+                <option value="DEPOSIT_50">50% do valor</option>
+                <option value="FULL">100% do valor</option>
+                <option value="NONE">Apenas reserva</option>
+              </select>
+              <input
+                name="amountPaidPercent"
+                type="number"
+                step="0.01"
+                placeholder="% pago"
+                value={syncSource === "percent" ? amountPaidPercentInput : syncedPaid.percent}
+                onChange={(event) => syncAmountFromPercent(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="amountPaid"
+                type="number"
+                step="0.01"
+                placeholder="Valor pago"
+                value={syncSource === "amount" ? amountPaidInput : syncedPaid.amount}
+                onChange={(event) => syncPercentFromAmount(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+            </>
+          ) : (
+            <>
+              <input type="hidden" name="paymentType" value="NONE" />
+              <input type="hidden" name="amountPaidPercent" value="0" />
+              <input type="hidden" name="amountPaid" value="0" />
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                Uso pessoal ativo: pedido fica fora de faturamento e lucro.
+              </p>
+            </>
+          )}
           <textarea
             name="notes"
             placeholder="Observacoes internas"
@@ -407,51 +480,75 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
                 className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
               />
               <input
-                name="extraFees"
-                type="number"
-                min={0}
-                step="0.01"
-                value={extraFeesInput}
-                onChange={(event) => setExtraFeesInput(event.target.value)}
-                placeholder="Taxa de importacao (R$)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="internalShipping"
-                type="number"
-                min={0}
-                step="0.01"
-                value={internalShippingInput}
-                onChange={(event) => setInternalShippingInput(event.target.value)}
-                placeholder="Frete interno (R$)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
                 name="trackingCode"
                 placeholder="Codigo de rastreio (opcional)"
                 className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
               />
-              <input
-                name="carrier"
-                placeholder="Transportadora (17track, opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="originCountry"
-                defaultValue="China"
-                placeholder="Pais de origem"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="paidAt"
-                type="date"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <textarea
-                name="packageNotes"
-                placeholder="Observacoes do pacote"
-                className="min-h-[80px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
+              <label className="flex items-center gap-2 text-sm text-neutral-600">
+                <input
+                  type="checkbox"
+                  checked={showPackageAdvanced || entryMode === "advanced"}
+                  onChange={(event) => setShowPackageAdvanced(event.target.checked)}
+                />
+                Mostrar campos avancados (taxa, frete interno, carrier, data, observacoes)
+              </label>
+
+              {(showPackageAdvanced || entryMode === "advanced") && (
+                <>
+                  <input
+                    name="extraFees"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={extraFeesInput}
+                    onChange={(event) => setExtraFeesInput(event.target.value)}
+                    placeholder="Taxa de importacao (R$)"
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                  />
+                  <input
+                    name="internalShipping"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={internalShippingInput}
+                    onChange={(event) => setInternalShippingInput(event.target.value)}
+                    placeholder="Frete interno (R$)"
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                  />
+                  <input
+                    name="carrier"
+                    placeholder="Transportadora (17track, opcional)"
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                  />
+                  <input
+                    name="originCountry"
+                    defaultValue="China"
+                    placeholder="Pais de origem"
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                  />
+                  <input
+                    name="paidAt"
+                    type="date"
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                  />
+                  <textarea
+                    name="packageNotes"
+                    placeholder="Observacoes do pacote"
+                    className="min-h-[80px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                  />
+                </>
+              )}
+
+              {!showPackageAdvanced && entryMode === "quick" && (
+                <>
+                  <input type="hidden" name="extraFees" value={extraFeesInput} />
+                  <input type="hidden" name="internalShipping" value={internalShippingInput} />
+                  <input type="hidden" name="carrier" value="" />
+                  <input type="hidden" name="originCountry" value="China" />
+                  <input type="hidden" name="paidAt" value="" />
+                  <input type="hidden" name="packageNotes" value="" />
+                </>
+              )}
               <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
                 Custo final do pacote:{" "}
                 <span className="font-semibold">
@@ -473,9 +570,20 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
         </div>
       </section>
 
-      <SubmitButton pendingLabel="Criando pedido..." className="w-full">
-        Criar pedido
-      </SubmitButton>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SubmitButton pendingLabel="Criando pedido..." className="w-full" name="afterSubmit" value="open">
+          Criar e abrir pedido
+        </SubmitButton>
+        <SubmitButton
+          pendingLabel="Criando pedido..."
+          className="w-full"
+          variant="outline"
+          name="afterSubmit"
+          value="new"
+        >
+          Criar e novo
+        </SubmitButton>
+      </div>
     </div>
   );
 }

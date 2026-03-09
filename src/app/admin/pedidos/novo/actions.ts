@@ -37,6 +37,7 @@ export async function createOrderManual(formData: FormData) {
   const amountPaidInput = normalizeNumber(formData.get("amountPaid"), -1);
   const amountPaidPercentInput = normalizeNumber(formData.get("amountPaidPercent"), -1);
   const amountPaidSource = String(formData.get("amountPaidSource") ?? "").trim();
+  const afterSubmit = String(formData.get("afterSubmit") ?? "open").trim();
   const notes = String(formData.get("notes") ?? "").trim();
   const isPersonalUse = formData.get("isPersonalUse") ? 1 : 0;
 
@@ -55,7 +56,7 @@ export async function createOrderManual(formData: FormData) {
   const originCountry = String(formData.get("originCountry") ?? "China").trim();
 
   const name = String(formData.get("name") ?? "").trim();
-  const email = String(formData.get("email") ?? "").trim();
+  const emailInput = String(formData.get("email") ?? "").trim().toLowerCase();
   const phone = String(formData.get("phone") ?? "").trim();
   const line1 = String(formData.get("line1") ?? "").trim();
   const line2 = String(formData.get("line2") ?? "").trim();
@@ -64,7 +65,9 @@ export async function createOrderManual(formData: FormData) {
   const postalCode = String(formData.get("postalCode") ?? "").trim();
   const country = String(formData.get("country") ?? "Brasil").trim();
 
-  if (!name || !email || !line1 || !city || !state || !size) {
+  const email = emailInput || `cliente-${Date.now()}@local.invalid`;
+
+  if (!name || !line1 || !city || !state || !size) {
     throw new Error("Dados incompletos para criar pedido.");
   }
 
@@ -237,6 +240,10 @@ export async function createOrderManual(formData: FormData) {
     action: "Criou pedido manual",
     orderId,
   });
+
+  if (afterSubmit === "new") {
+    redirect("/admin/pedidos/novo");
+  }
 
   redirect(`/admin/pedidos/${orderId}`);
 }

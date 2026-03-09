@@ -2,7 +2,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  createOrder,
   deleteOrder,
+  getOrderDetail,
   getImportPackageByOrderId,
   logAction,
   recalculateImportPackageAllocations,
@@ -332,6 +334,61 @@ export async function cancelOrder(formData: FormData) {
 
   revalidatePath(`/admin/pedidos/${orderId}`);
   revalidatePath(`/admin/pedidos`);
+}
+
+export async function duplicateOrderAction(formData: FormData) {
+  "use server";
+
+  const session = await requireAdmin();
+  const orderId = String(formData.get("orderId") ?? "");
+  if (!orderId) return;
+
+  const data = await getOrderDetail(orderId);
+  if (!data || data.items.length === 0) {
+    throw new Error("Pedido nao encontrado para duplicar.");
+  }
+
+  const { order, customer, address, items } = data;
+  const firstItem = items[0];
+  const fallbackEmail = `cliente-${Date.now()}@local.invalid`;
+
+  const duplicated = await createOrder({
+    productId: firstItem.product_id ?? null,
+    itemName: firstItem.item_name ?? firstItem.name ?? "Camisa de time sob encomenda",
+    itemDescription: firstItem.item_description ?? null,
+    size: firstItem.size,
+    quantity: Number(firstItem.quantity) > 0 ? Number(firstItem.quantity) : 1,
+    unitPrice: Number(firstItem.unit_price),
+    total: Number(order.total_amount),
+    paymentType: order.payment_type,
+    amountPaid: 0,
+    isPersonalUse: order.is_personal_use,
+    notes: order.notes
+      ? `[Duplicado de ${order.code}]\n${order.notes}`
+      : `[Duplicado de ${order.code}]`,
+    customer: {
+      name: customer?.name ?? "Cliente",
+      email: customer?.email || fallbackEmail,
+      phone: customer?.phone ?? null,
+    },
+    address: {
+      line1: address?.line1 ?? "Endereco nao informado",
+      line2: address?.line2 ?? null,
+      city: address?.city ?? "Cidade",
+      state: address?.state ?? "Estado",
+      postalCode: address?.postal_code ?? null,
+      country: address?.country ?? "Brasil",
+    },
+  });
+
+  await logAction({
+    userEmail: session.user.email ?? "admin",
+    action: `Duplicou pedido ${order.code}`,
+    orderId: duplicated.orderId,
+  });
+
+  revalidatePath("/admin/pedidos");
+  redirect(`/admin/pedidos/${duplicated.orderId}`);
 }
 
 export async function deleteOrderAction(formData: FormData) {

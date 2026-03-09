@@ -1,15 +1,22 @@
 import { Container } from "@/components/layout/container";
+import { NewOrderCustomerFields } from "@/components/admin/new-order-customer-fields";
 import { NewOrderDetails } from "@/components/admin/new-order-details";
 import { createOrderManual } from "@/app/admin/pedidos/novo/actions";
-import { listImportPackages, listProducts, listSuppliers } from "@/lib/db/queries";
+import {
+  listCustomerPresets,
+  listImportPackages,
+  listProducts,
+  listSuppliers,
+} from "@/lib/db/queries";
 import { requireAdmin } from "@/lib/require-admin";
 
 export default async function NewOrderPage() {
   await requireAdmin();
-  const [products, suppliers, packages] = await Promise.all([
+  const [products, suppliers, packages, customerPresets] = await Promise.all([
     listProducts(),
     listSuppliers(),
     listImportPackages(),
+    listCustomerPresets(),
   ]);
   const sortedProducts = products.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -25,75 +32,7 @@ export default async function NewOrderPage() {
         action={createOrderManual}
         className="grid gap-10 rounded-3xl border border-neutral-200 bg-white p-8 lg:grid-cols-[1.1fr_0.9fr]"
       >
-        <div className="space-y-8">
-          <section>
-            <h2 className="text-lg font-semibold">Cliente</h2>
-            <div className="mt-4 grid gap-4">
-              <input
-                name="name"
-                required
-                placeholder="Nome completo"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="email"
-                type="email"
-                required
-                placeholder="Email"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="phone"
-                placeholder="Telefone / WhatsApp"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-            </div>
-          </section>
-
-          <section>
-            <h2 className="text-lg font-semibold">Destino</h2>
-            <div className="mt-4 grid gap-4">
-              <input
-                name="line1"
-                required
-                placeholder="Rua e numero"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="line2"
-                placeholder="Complemento"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <div className="grid gap-4 md:grid-cols-2">
-                <input
-                  name="city"
-                  required
-                  placeholder="Cidade"
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-                />
-                <input
-                  name="state"
-                  required
-                  placeholder="Estado"
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-                />
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <input
-                  name="postalCode"
-                  placeholder="CEP"
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-                />
-                <input
-                  name="country"
-                  defaultValue="Brasil"
-                  placeholder="Pais"
-                  className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-                />
-              </div>
-            </div>
-          </section>
-        </div>
+        <NewOrderCustomerFields presets={customerPresets} />
 
         <NewOrderDetails
           products={sortedProducts.map((product) => ({

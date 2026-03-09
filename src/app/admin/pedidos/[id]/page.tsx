@@ -1,5 +1,6 @@
 export const dynamic = "force-dynamic";
 
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { Container } from "@/components/layout/container";
@@ -9,6 +10,7 @@ import {
   getImportPackageByOrderId,
   getOrderDetail,
   getSetting,
+  listImportPackageOrders,
   listActionLogs,
   listSuppliers,
 } from "@/lib/db/queries";
@@ -16,6 +18,7 @@ import { requireAdmin } from "@/lib/require-admin";
 import {
   cancelOrder,
   deleteOrderAction,
+  duplicateOrderAction,
   updateShipmentInfo,
   updateSupplierInfo,
 } from "@/app/admin/pedidos/[id]/actions";
@@ -56,6 +59,9 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
     getSetting("stalled_days"),
     getImportPackageByOrderId(order.id),
   ]);
+  const importPackageOrders = importPackage
+    ? await listImportPackageOrders(importPackage.id)
+    : [];
   const stalledDays = stalledSetting ? Number(stalledSetting.value) : 7;
   const orderQuantity = items.reduce((sum, item) => sum + Number(item.quantity), 0);
   const supplierProductCost = supplierOrder?.product_cost ? Number(supplierOrder.product_cost) : 0;
@@ -279,6 +285,12 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
               automaticas.
             </p>
             <div className="mt-4 grid gap-3">
+              <form action={duplicateOrderAction}>
+                <input type="hidden" name="orderId" value={order.id} />
+                <SubmitButton pendingLabel="Duplicando..." variant="outline" className="w-full py-2">
+                  Duplicar pedido
+                </SubmitButton>
+              </form>
               <form action={cancelOrder}>
                 <input type="hidden" name="orderId" value={order.id} />
                 <SubmitButton
@@ -321,6 +333,41 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                 </p>
                 {importPackage.tracking_code && <p>Rastreio: {importPackage.tracking_code}</p>}
               </div>
+              {importPackageOrders.length > 0 && (
+                <div className="mt-4 space-y-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+                  <p className="font-semibold text-neutral-900">Clientes no mesmo pacote</p>
+                  {importPackageOrders.map((linkedOrder) => {
+                    const isCurrent = linkedOrder.order_id === order.id;
+                    const linkedProfit =
+                      Number(linkedOrder.total_amount) - Number(linkedOrder.total_cost);
+
+                    return (
+                      <Link
+                        key={linkedOrder.order_id}
+                        href={`/admin/pedidos/${linkedOrder.order_id}`}
+                        className={`block rounded-lg border px-3 py-2 transition hover:border-neutral-400 ${
+                          isCurrent
+                            ? "border-neutral-300 bg-white"
+                            : "border-neutral-200 bg-white/70"
+                        }`}
+                      >
+                        <p className="font-semibold text-neutral-900">
+                          {linkedOrder.customer_name} {isCurrent ? "(pedido atual)" : ""}
+                        </p>
+                        <p>
+                          {linkedOrder.code} - {Number(linkedOrder.quantity)} camisa(s) -{" "}
+                          {statusLabel[linkedOrder.status]}
+                        </p>
+                        <p>
+                          Venda R$ {Number(linkedOrder.total_amount).toFixed(2)} | Custo R${" "}
+                          {Number(linkedOrder.total_cost).toFixed(2)} | Lucro R${" "}
+                          {linkedProfit.toFixed(2)}
+                        </p>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -386,11 +433,9 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
             </form>
             {shipment && (
               <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
-                <p>Status atual: {shipment.last_status ?? "Sem atualização"}</p>
+                <p>Status atual: {translateTrackingStatus(shipment.last_status)}</p>
                 {shipment.last_status && (
-                  <p className="text-xs text-neutral-500">
-                    Leitura simplificada: {translateTrackingStatus(shipment.last_status)}
-                  </p>
+                  <p className="text-xs text-neutral-500">Status bruto: {shipment.last_status}</p>
                 )}
                 {shipment.eta_date && (
                   <p>
