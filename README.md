@@ -1,36 +1,82 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Loja Camisa
 
-## Getting Started
+Sistema administrativo simples para venda de camisas sob encomenda.
+Foco: controle de pedidos, cliente/destino, rastreio, custos e lucro.
 
-First, run the development server:
+## Stack
+- Next.js (App Router) + React
+- PostgreSQL (Supabase) via SQL
+- NextAuth (login admin)
+- Tailwind CSS
 
+## O que o sistema cobre hoje
+- Cadastro rapido de pedido (sem precisar cadastrar produto/modelo antes)
+- Cliente + destino completo
+- Quantidade, preco unitario e forma de pagamento
+- Rastreio opcional ja na criacao do pedido
+- Controle de custo de fornecedor e margem
+- Financeiro com taxas estimadas (percentual e fixa por pagamento)
+
+## Como rodar
+1. Instale dependencias:
+```bash
+npm install
+```
+2. Configure variaveis de ambiente:
+```bash
+copy .env.example .env
+```
+3. Preencha `DATABASE_URL` com sua conexao PostgreSQL do Supabase.
+4. Rode seed inicial (cria schema/tabelas, admin e dados base):
+```bash
+npm run db:seed
+```
+5. Inicie:
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Deploy (Vercel + Supabase)
+1. Criar projeto no Supabase.
+2. Copiar `DATABASE_URL` PostgreSQL.
+3. Criar projeto na Vercel e conectar este repositório.
+4. Configurar variaveis na Vercel:
+   - `DATABASE_URL`
+   - `NEXTAUTH_URL` (URL final da Vercel)
+   - `NEXTAUTH_SECRET`
+   - `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`
+   - `TRACKING_PROVIDER`, `TRACKING_17TRACK_KEY` (se usar rastreio automatico)
+   - `CRON_SECRET` (usado pela Vercel para autenticar o cron)
+   - `TRACKING_CRON_SECRET`
+   - `TRACKING_AUTO_REFRESH_HOURS` (ex: `6`)
+   - `TRACKING_AUTO_REFRESH_BATCH` (ex: `20`)
+5. Fazer deploy.
+6. Executar `npm run db:seed` com o mesmo `DATABASE_URL` de producao (uma vez).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Atualizacao automatica de rastreio
+- O projeto possui cron pronto em `vercel.json` para executar `GET /api/tracking/cron` a cada 6 horas.
+- O endpoint e protegido por `TRACKING_CRON_SECRET` (Bearer token).
+- A cada execucao, o sistema atualiza rastreios ativos (`AWAITING_SUPPLIER`, `PREPARING`, `SHIPPED`) e marca como `DELIVERED` quando detecta entrega.
+- Para testar manualmente em desenvolvimento:
+```powershell
+Invoke-RestMethod -Method GET -Uri "http://localhost:3000/api/tracking/cron?secret=SEU_SEGREDO"
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Rotas principais
+- `/admin`: dashboard
+- `/admin/pedidos`: lista de pedidos
+- `/admin/pedidos/novo`: criar venda
+- `/admin/financeiro`: faturamento, custo, lucro, taxas
+- `/admin/configuracoes`: nome da loja, dias de atraso, taxas
 
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Variaveis de ambiente
+- `DATABASE_URL`: PostgreSQL do Supabase
+- `NEXTAUTH_URL`: URL base da aplicacao
+- `NEXTAUTH_SECRET`: segredo do NextAuth
+- `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`: admin inicial
+- `TRACKING_PROVIDER`: `17track`
+- `TRACKING_17TRACK_KEY`: chave da API de rastreio
+- `CRON_SECRET`: segredo padrao de autenticação de cron na Vercel
+- `TRACKING_CRON_SECRET`: segredo para proteger o endpoint de cron
+- `TRACKING_AUTO_REFRESH_HOURS`: intervalo minimo para reconsultar rastreios
+- `TRACKING_AUTO_REFRESH_BATCH`: maximo de pedidos por rodada do cron

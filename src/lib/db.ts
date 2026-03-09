@@ -1,0 +1,323 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
+import postgres, { type Sql } from "postgres";
+
+declare global {
+  var __lojaCamisaPgClient: Sql | undefined;
+}
+
+type DbParam = string | number | boolean | null | undefined | Date;
+
+type QueryExecutor = {
+  query<T extends Record<string, unknown>>(query: string, params: DbParam[]): Promise<T[]>;
+  exec(query: string): Promise<void>;
+};
+
+const schemaSql = `
+  CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS customers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    phone TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS addresses (
+    id TEXT PRIMARY KEY,
+    customer_id TEXT NOT NULL,
+    line1 TEXT NOT NULL,
+    line2 TEXT,
+    city TEXT NOT NULL,
+    state TEXT NOT NULL,
+    postal_code TEXT,
+    country TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    team TEXT NOT NULL,
+    model TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    base_price DOUBLE PRECISION NOT NULL,
+    active INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS suppliers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    country TEXT NOT NULL,
+    active INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    customer_id TEXT NOT NULL,
+    address_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    payment_type TEXT NOT NULL,
+    total_amount DOUBLE PRECISION NOT NULL,
+    amount_paid DOUBLE PRECISION NOT NULL,
+    currency TEXT NOT NULL,
+    notes TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (address_id) REFERENCES addresses(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS order_items (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    product_id TEXT NOT NULL,
+    size TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    unit_price DOUBLE PRECISION NOT NULL,
+    total_price DOUBLE PRECISION NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS supplier_orders (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL UNIQUE,
+    supplier_id TEXT NOT NULL,
+    product_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+    extra_fees DOUBLE PRECISION NOT NULL DEFAULT 0,
+    package_quantity INTEGER NOT NULL DEFAULT 0,
+    unit_cost DOUBLE PRECISION NOT NULL,
+    total_cost DOUBLE PRECISION NOT NULL,
+    paid_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+  );
+
+  ALTER TABLE supplier_orders
+    ADD COLUMN IF NOT EXISTS product_cost DOUBLE PRECISION NOT NULL DEFAULT 0;
+  ALTER TABLE supplier_orders
+    ADD COLUMN IF NOT EXISTS extra_fees DOUBLE PRECISION NOT NULL DEFAULT 0;
+  ALTER TABLE supplier_orders
+    ADD COLUMN IF NOT EXISTS package_quantity INTEGER NOT NULL DEFAULT 0;
+
+  CREATE TABLE IF NOT EXISTS shipments (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL UNIQUE,
+    tracking_code TEXT NOT NULL,
+    carrier TEXT NOT NULL,
+    origin_country TEXT NOT NULL,
+    eta_date TEXT,
+    last_status TEXT,
+    last_update_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS order_status_history (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    note TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL,
+    direction TEXT NOT NULL,
+    amount DOUBLE PRECISION NOT NULL,
+    method TEXT,
+    paid_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS action_logs (
+    id TEXT PRIMARY KEY,
+    user_email TEXT NOT NULL,
+    action TEXT NOT NULL,
+    order_id TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id)
+  );
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+  CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+  CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
+  CREATE INDEX IF NOT EXISTS idx_logs_order_id ON action_logs(order_id);
+`;
+
+function normalizeParam(param: DbParam): string | number | boolean | null {
+  if (param === undefined) return null;
+  if (param instanceof Date) return param.toISOString();
+  return param;
+}
+
+function replacePositionalParams(query: string) {
+  let index = 0;
+  return query.replace(/\?/g, () => `$${++index}`);
+}
+
+const rawDatabaseUrl = process.env.DATABASE_URL ?? "";
+
+function getDatabaseUrl() {
+  if (!rawDatabaseUrl || rawDatabaseUrl.startsWith("file:")) {
+    throw new Error(
+      "DATABASE_URL precisa ser uma URL PostgreSQL (Supabase). Exemplo: postgres://user:pass@host:5432/postgres",
+    );
+  }
+  return rawDatabaseUrl;
+}
+
+function sanitizeDatabaseUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.protocol}//${parsed.hostname}:${parsed.port}${parsed.pathname}`;
+  } catch {
+    return "DATABASE_URL invalida";
+  }
+}
+
+export const dbPath = rawDatabaseUrl
+  ? sanitizeDatabaseUrl(rawDatabaseUrl)
+  : "DATABASE_URL nao configurada";
+
+const queryContext = new AsyncLocalStorage<QueryExecutor>();
+
+let postgresClient: Sql | null = null;
+let schemaInitialized = false;
+let schemaInitPromise: Promise<void> | null = null;
+
+function getPostgresClient() {
+  if (!postgresClient) {
+    const poolMax = Number(process.env.DB_POOL_MAX ?? 5);
+    const safePoolMax = Number.isFinite(poolMax)
+      ? Math.max(1, Math.min(poolMax, 20))
+      : 5;
+
+    const existingClient =
+      process.env.NODE_ENV === "production" ? undefined : globalThis.__lojaCamisaPgClient;
+
+    postgresClient = existingClient ?? postgres(getDatabaseUrl(), {
+      max: safePoolMax,
+      idle_timeout: 20,
+      connect_timeout: 10,
+      prepare: false,
+      ssl: "require",
+    });
+
+    if (process.env.NODE_ENV !== "production" && !globalThis.__lojaCamisaPgClient) {
+      globalThis.__lojaCamisaPgClient = postgresClient;
+    }
+  }
+  return postgresClient;
+}
+
+export async function initSchema() {
+  if (schemaInitialized) return;
+  if (!schemaInitPromise) {
+    schemaInitPromise = (async () => {
+      const client = getPostgresClient();
+      await client.unsafe(schemaSql);
+      schemaInitialized = true;
+    })();
+  }
+  await schemaInitPromise;
+}
+
+function baseExecutor(): QueryExecutor {
+  return {
+    async query<T extends Record<string, unknown>>(query: string, params: DbParam[]) {
+      await initSchema();
+      const client = getPostgresClient();
+      const pgQuery = replacePositionalParams(query);
+      const rows = await client.unsafe(
+        pgQuery,
+        params.map(normalizeParam),
+      );
+      return rows as unknown as T[];
+    },
+    async exec(query: string) {
+      await initSchema();
+      const client = getPostgresClient();
+      await client.unsafe(query);
+    },
+  };
+}
+
+function activeExecutor() {
+  return queryContext.getStore() ?? baseExecutor();
+}
+
+async function runInTransaction<T>(fn: () => Promise<T> | T): Promise<T> {
+  await initSchema();
+  const root = getPostgresClient();
+  const value = await root.begin(async (transactionClient) => {
+    const transactionExecutor: QueryExecutor = {
+      async query<T extends Record<string, unknown>>(query: string, params: DbParam[]) {
+        const pgQuery = replacePositionalParams(query);
+        const rows = await transactionClient.unsafe(
+          pgQuery,
+          params.map(normalizeParam),
+        );
+        return rows as unknown as T[];
+      },
+      async exec(query: string) {
+        await transactionClient.unsafe(query);
+      },
+    };
+
+    return queryContext.run(transactionExecutor, async () => fn());
+  });
+  return value as T;
+}
+
+export const db = {
+  prepare<T extends Record<string, unknown>>(query: string) {
+    return {
+      all: async (...params: DbParam[]) => activeExecutor().query<T>(query, params),
+      get: async (...params: DbParam[]) => {
+        const rows = await activeExecutor().query<T>(query, params);
+        return rows[0];
+      },
+      run: async (...params: DbParam[]) => {
+        await activeExecutor().query(query, params);
+      },
+    };
+  },
+  exec: async (query: string) => {
+    await activeExecutor().exec(query);
+  },
+  transaction<T>(fn: () => Promise<T> | T) {
+    return async () => runInTransaction(fn);
+  },
+};
