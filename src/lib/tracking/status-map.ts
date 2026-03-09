@@ -84,3 +84,15 @@ export function shouldAdvanceOrderStatus(current: string, next: string) {
   const nextRank = STATUS_RANK[next] ?? 0;
   return nextRank > currentRank;
 }
+
+export function translateTrackingStatus(rawStatus: string | null | undefined) {
+  if (!rawStatus) return "Sem atualizacao";
+  const normalized = rawStatus.toLowerCase();
+
+  if (containsAny(normalized, DELIVERED_TERMS)) return "Entregue";
+  if (containsAny(normalized, PREPARING_TERMS)) return "Aguardando liberacao / taxa";
+  if (containsAny(normalized, SHIPPED_TERMS)) return "Em transito (objeto postado)";
+  if (containsAny(normalized, AWAITING_SUPPLIER_TERMS)) return "Aguardando postagem";
+
+  return rawStatus;
+}

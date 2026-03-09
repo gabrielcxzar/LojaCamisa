@@ -27,7 +27,8 @@ export function TrackingRefreshButton({ orderId }: Props) {
         throw new Error(data.error ?? "Erro ao atualizar rastreamento.");
       }
 
-      setMessage("Status atualizado.");
+      const data = await response.json();
+      setMessage(data.ok ? "Status atualizado." : "Sem nova atualizacao no rastreio.");
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : "Erro ao atualizar rastreamento.",

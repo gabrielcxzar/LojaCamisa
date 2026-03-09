@@ -4,11 +4,12 @@ import { requireAdmin } from "@/lib/require-admin";
 import { registerShipmentTracking } from "@/lib/tracking";
 import {
   createOrder,
+  getImportPackageById,
   getProductBySlug,
+  linkOrderToImportPackage,
   logAction,
-  updateOrderStatus,
-  upsertShipment,
-  upsertSupplierOrder,
+  recalculateImportPackageAllocations,
+  upsertImportPackage,
 } from "@/lib/db/queries";
 
 function normalizeNumber(value: FormDataEntryValue | null, fallback = 0) {
@@ -39,11 +40,15 @@ export async function createOrderManual(formData: FormData) {
   const notes = String(formData.get("notes") ?? "").trim();
   const isPersonalUse = formData.get("isPersonalUse") ? 1 : 0;
 
+  const packageMode = String(formData.get("packageMode") ?? "new").trim();
+  const existingPackageId = String(formData.get("existingPackageId") ?? "").trim();
   const supplierId = String(formData.get("supplierId") ?? "").trim();
   const packageQuantityInput = normalizeNumber(formData.get("packageQuantity"), 0);
   const productCostInput = normalizeNumber(formData.get("productCost"), 0);
   const extraFeesInput = normalizeNumber(formData.get("extraFees"), 0);
+  const internalShippingInput = normalizeNumber(formData.get("internalShipping"), 0);
   const paidAt = String(formData.get("paidAt") ?? "").trim();
+  const packageNotes = String(formData.get("packageNotes") ?? "").trim();
 
   const trackingCode = String(formData.get("trackingCode") ?? "").trim();
   const carrier = String(formData.get("carrier") ?? "").trim();
@@ -134,11 +139,22 @@ export async function createOrderManual(formData: FormData) {
     throw new Error("Valor vendido invalido.");
   }
 
-  if (!isPersonalUse && productCostInput <= 0) {
-    throw new Error("Informe o valor pago ao fornecedor para pedido comercial.");
+  if (!["new", "existing", "none"].includes(packageMode)) {
+    throw new Error("Modo de pacote invalido.");
   }
-  if (!isPersonalUse && !supplierId) {
-    throw new Error("Selecione um fornecedor para pedido comercial.");
+  if (packageMode === "none" && !isPersonalUse) {
+    throw new Error("Pedido comercial deve ser vinculado a um pacote.");
+  }
+  if (packageMode === "new") {
+    if (!isPersonalUse && productCostInput <= 0) {
+      throw new Error("Informe o valor pago ao fornecedor para pedido comercial.");
+    }
+    if (!supplierId && !isPersonalUse) {
+      throw new Error("Selecione um fornecedor para o novo pacote.");
+    }
+  }
+  if (packageMode === "existing" && !existingPackageId) {
+    throw new Error("Selecione um pacote existente.");
   }
 
   let amountPaid =
@@ -178,39 +194,42 @@ export async function createOrderManual(formData: FormData) {
     },
   });
 
-  const hasSupplierValues = productCostInput > 0 || extraFeesInput > 0;
-  if (supplierId && (hasSupplierValues || !isPersonalUse)) {
+  let packageIdToLink: string | null = null;
+  if (packageMode === "new") {
     const packageQuantity = Math.max(1, Math.round(packageQuantityInput || qty));
-    const packageFinalCost = productCostInput + extraFeesInput;
-    const unitCost = packageFinalCost / packageQuantity;
-    const totalCost = unitCost * qty;
-
-    await upsertSupplierOrder({
-      orderId,
-      supplierId,
+    packageIdToLink = await upsertImportPackage({
+      supplierId: supplierId || null,
+      packageQuantity,
       productCost: productCostInput,
       extraFees: extraFeesInput,
-      packageQuantity,
-      unitCost,
-      totalCost,
+      internalShipping: internalShippingInput,
+      trackingCode: trackingCode || null,
+      carrier: carrier || null,
+      originCountry: originCountry || "China",
       paidAt: paidAt || null,
+      notes: packageNotes || null,
     });
+
+    if (trackingCode) {
+      try {
+        await registerShipmentTracking(trackingCode, carrier || "other");
+      } catch {
+        // Keep saved tracking even when external provider is unavailable.
+      }
+    }
   }
 
-  if (trackingCode) {
-    await upsertShipment({
-      orderId,
-      trackingCode,
-      carrier: carrier || "other",
-      originCountry,
-    });
-    await updateOrderStatus(orderId, "SHIPPED", "Rastreamento registrado na criacao");
-
-    try {
-      await registerShipmentTracking(trackingCode, carrier || "other");
-    } catch {
-      // Keep saved tracking even when external provider is unavailable.
+  if (packageMode === "existing") {
+    const importPackage = await getImportPackageById(existingPackageId);
+    if (!importPackage) {
+      throw new Error("Pacote selecionado nao encontrado.");
     }
+    packageIdToLink = importPackage.id;
+  }
+
+  if (packageIdToLink) {
+    await linkOrderToImportPackage(orderId, packageIdToLink);
+    await recalculateImportPackageAllocations(packageIdToLink);
   }
 
   await logAction({

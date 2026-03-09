@@ -3,9 +3,12 @@ import { redirect } from "next/navigation";
 
 import {
   deleteOrder,
+  getImportPackageByOrderId,
   logAction,
+  recalculateImportPackageAllocations,
   updateOrderSaleData,
   updateOrderStatus,
+  upsertImportPackage,
   upsertShipment,
   upsertSupplierOrder,
 } from "@/lib/db/queries";
@@ -90,6 +93,40 @@ export async function updateSupplierInfo(formData: FormData) {
       totalAmount: totalSold,
       isPersonalUse,
     });
+
+    const linkedImportPackage = await getImportPackageByOrderId(orderId);
+    if (linkedImportPackage) {
+      if (!supplierId && !isPersonalUse) {
+        throw new Error("Selecione um fornecedor para pedido comercial.");
+      }
+
+      const packageQuantity = Math.max(1, Math.round(packageQuantityInput || Number(linkedImportPackage.package_quantity) || 1));
+      await upsertImportPackage({
+        packageId: linkedImportPackage.id,
+        supplierId: supplierId || linkedImportPackage.supplier_id || null,
+        packageQuantity,
+        productCost: productCostInput,
+        extraFees: extraFeesInput,
+        internalShipping: Number(linkedImportPackage.internal_shipping ?? 0),
+        trackingCode: linkedImportPackage.tracking_code ?? null,
+        carrier: linkedImportPackage.carrier ?? null,
+        originCountry: linkedImportPackage.origin_country ?? null,
+        paidAt: paidAt || null,
+        notes: linkedImportPackage.notes ?? null,
+      });
+
+      await recalculateImportPackageAllocations(linkedImportPackage.id);
+      await logAction({
+        userEmail: session.user.email ?? "admin",
+        action: `Atualizou pacote ${linkedImportPackage.code} e recalculou rateio`,
+        orderId,
+      });
+
+      revalidatePath(`/admin/pedidos/${orderId}`);
+      revalidatePath("/admin/pedidos");
+      revalidatePath("/admin/financeiro");
+      return;
+    }
 
     if (!supplierId) {
       if (!isPersonalUse) {
@@ -308,8 +345,14 @@ export async function deleteOrderAction(formData: FormData) {
   const order = await db
     .prepare("SELECT code FROM orders WHERE id = ?")
     .get(orderId) as { code: string } | undefined;
+  const linkedImportPackage = await getImportPackageByOrderId(orderId);
 
   await deleteOrder(orderId);
+
+  if (linkedImportPackage) {
+    await recalculateImportPackageAllocations(linkedImportPackage.id);
+  }
+
   await logAction({
     userEmail: session.user.email ?? "admin",
     action: `Excluiu pedido ${order?.code ?? orderId}`,

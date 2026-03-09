@@ -6,6 +6,7 @@ import {
   listTrackableShipments,
   logAction,
   updateOrderStatus,
+  updateImportPackageTrackingByCode,
   updateShipmentStatus,
 } from "@/lib/db/queries";
 import { getShipmentTrackingUpdate } from "@/lib/tracking";
@@ -81,6 +82,11 @@ async function run(request: Request) {
       if (!update) continue;
 
       await updateShipmentStatus(shipment.order_id, {
+        lastStatus: update.status,
+        lastUpdateAt: update.lastUpdateAt?.toISOString() ?? null,
+        etaDate: update.etaDate?.toISOString() ?? null,
+      });
+      await updateImportPackageTrackingByCode(shipment.tracking_code, {
         lastStatus: update.status,
         lastUpdateAt: update.lastUpdateAt?.toISOString() ?? null,
         etaDate: update.etaDate?.toISOString() ?? null,

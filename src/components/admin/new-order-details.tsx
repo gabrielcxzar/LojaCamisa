@@ -16,9 +16,17 @@ type SupplierOption = {
   name: string;
 };
 
+type ImportPackageOption = {
+  id: string;
+  code: string;
+  trackingCode: string | null;
+  linkedOrders: number;
+};
+
 type Props = {
   products: ProductOption[];
   suppliers: SupplierOption[];
+  packages: ImportPackageOption[];
 };
 
 function parseNumber(value: string) {
@@ -40,7 +48,7 @@ function defaultPercentByPaymentType(paymentType: string) {
   return 0;
 }
 
-export function NewOrderDetails({ products, suppliers }: Props) {
+export function NewOrderDetails({ products, suppliers, packages }: Props) {
   const [productMode, setProductMode] = useState<"custom" | "existing">("custom");
   const [productSlug, setProductSlug] = useState("");
   const [quantity, setQuantity] = useState("1");
@@ -51,10 +59,15 @@ export function NewOrderDetails({ products, suppliers }: Props) {
   const [syncSource, setSyncSource] = useState<"percent" | "amount">("percent");
   const [isPersonalUse, setIsPersonalUse] = useState(false);
 
+  const [packageMode, setPackageMode] = useState<"new" | "existing" | "none">(
+    "new",
+  );
+  const [existingPackageId, setExistingPackageId] = useState(packages[0]?.id ?? "");
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [packageQuantityInput, setPackageQuantityInput] = useState("1");
   const [productCostInput, setProductCostInput] = useState("");
   const [extraFeesInput, setExtraFeesInput] = useState("0.00");
+  const [internalShippingInput, setInternalShippingInput] = useState("0.00");
 
   const productPriceMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -88,26 +101,31 @@ export function NewOrderDetails({ products, suppliers }: Props) {
     return quantityValue * effectiveUnitPrice;
   }, [effectiveUnitPrice, orderTotalInput, quantityValue]);
 
-  const supplierSummary = useMemo(() => {
+  const packageSummary = useMemo(() => {
     const packageQuantity = Math.max(
       1,
       Math.round(parseNumber(packageQuantityInput) || quantityValue),
     );
     const productCost = Math.max(0, parseNumber(productCostInput));
     const extraFees = Math.max(0, parseNumber(extraFeesInput));
-    const packageFinalCost = productCost + extraFees;
+    const internalShipping = Math.max(0, parseNumber(internalShippingInput));
+    const packageFinalCost = productCost + extraFees + internalShipping;
     const averageUnitCost = packageFinalCost / packageQuantity;
     const allocatedCost = averageUnitCost * quantityValue;
 
     return {
       packageQuantity,
-      productCost,
-      extraFees,
       packageFinalCost,
       averageUnitCost,
       allocatedCost,
     };
-  }, [extraFeesInput, packageQuantityInput, productCostInput, quantityValue]);
+  }, [
+    extraFeesInput,
+    internalShippingInput,
+    packageQuantityInput,
+    productCostInput,
+    quantityValue,
+  ]);
 
   const syncedPaid = useMemo(() => {
     if (syncSource === "percent") {
@@ -276,26 +294,6 @@ export function NewOrderDetails({ products, suppliers }: Props) {
             onChange={(event) => syncPercentFromAmount(event.target.value)}
             className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
           />
-          <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-            Status e automatico: sem rastreio fica em aguardando, com rastreio vai para enviado e
-            depois atualiza sozinho pelo rastreamento.
-          </p>
-          <input
-            name="trackingCode"
-            placeholder="Codigo de rastreio (opcional)"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input
-            name="carrier"
-            placeholder="Transportadora (opcional)"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input
-            name="originCountry"
-            defaultValue="China"
-            placeholder="Pais de origem"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
           <textarea
             name="notes"
             placeholder="Observacoes internas"
@@ -314,76 +312,164 @@ export function NewOrderDetails({ products, suppliers }: Props) {
       </section>
 
       <section>
-        <h2 className="text-lg font-semibold">Compra com fornecedor</h2>
-        <div className="mt-4 grid gap-4">
-          <select
-            name="supplierId"
-            value={supplierId}
-            onChange={(event) => setSupplierId(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          >
-            {suppliers.length === 0 && <option value="">Sem fornecedor cadastrado</option>}
-            {suppliers.map((supplier) => (
-              <option key={supplier.id} value={supplier.id}>
-                {supplier.name}
-              </option>
-            ))}
-          </select>
-          <input
-            name="packageQuantity"
-            type="number"
-            min={1}
-            step="1"
-            value={packageQuantityInput}
-            onChange={(event) => setPackageQuantityInput(event.target.value)}
-            placeholder="Qtd de camisas no pacote"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input
-            name="productCost"
-            type="number"
-            min={0}
-            step="0.01"
-            value={productCostInput}
-            onChange={(event) => setProductCostInput(event.target.value)}
-            placeholder="Valor pago ao fornecedor (R$)"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input
-            name="extraFees"
-            type="number"
-            min={0}
-            step="0.01"
-            value={extraFeesInput}
-            onChange={(event) => setExtraFeesInput(event.target.value)}
-            placeholder="Taxa paga (R$)"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input
-            name="paidAt"
-            type="date"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-            Custo final do pacote:{" "}
-            <span className="font-semibold">
-              R$ {formatMoney(supplierSummary.packageFinalCost)}
-            </span>
-            <br />
-            Custo medio por camisa:{" "}
-            <span className="font-semibold">
-              R$ {formatMoney(supplierSummary.averageUnitCost)}
-            </span>
-            <br />
-            Custo alocado neste pedido:{" "}
-            <span className="font-semibold">
-              R$ {formatMoney(supplierSummary.allocatedCost)}
-            </span>
-          </p>
-          <p className="text-xs text-neutral-500">
-            Pedido comercial exige valor pago ao fornecedor. Em uso pessoal, esse campo pode ficar
-            zerado.
-          </p>
+        <h2 className="text-lg font-semibold">Pacote de importacao</h2>
+        <div className="mt-4 space-y-4">
+          <input type="hidden" name="packageMode" value={packageMode} />
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            <input
+              type="radio"
+              name="packageModeOption"
+              value="new"
+              checked={packageMode === "new"}
+              onChange={() => setPackageMode("new")}
+            />
+            Criar novo pacote para este pedido
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            <input
+              type="radio"
+              name="packageModeOption"
+              value="existing"
+              checked={packageMode === "existing"}
+              onChange={() => setPackageMode("existing")}
+            />
+            Vincular a pacote existente
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            <input
+              type="radio"
+              name="packageModeOption"
+              value="none"
+              checked={packageMode === "none"}
+              onChange={() => setPackageMode("none")}
+            />
+            Sem pacote (pedido isolado)
+          </label>
+
+          {packageMode === "existing" && (
+            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+              <select
+                name="existingPackageId"
+                value={existingPackageId}
+                onChange={(event) => setExistingPackageId(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              >
+                {packages.length === 0 && <option value="">Nenhum pacote cadastrado</option>}
+                {packages.map((importPackage) => (
+                  <option key={importPackage.id} value={importPackage.id}>
+                    {importPackage.code}
+                    {importPackage.trackingCode
+                      ? ` - ${importPackage.trackingCode}`
+                      : " - sem rastreio"}{" "}
+                    ({importPackage.linkedOrders} pedidos)
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-neutral-500">
+                Ao vincular, o custo por camisa e o rastreio serao herdados automaticamente.
+              </p>
+            </div>
+          )}
+
+          {packageMode === "new" && (
+            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+              <select
+                name="supplierId"
+                value={supplierId}
+                onChange={(event) => setSupplierId(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              >
+                {suppliers.length === 0 && <option value="">Sem fornecedor cadastrado</option>}
+                {suppliers.map((supplier) => (
+                  <option key={supplier.id} value={supplier.id}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                name="packageQuantity"
+                type="number"
+                min={1}
+                step="1"
+                value={packageQuantityInput}
+                onChange={(event) => setPackageQuantityInput(event.target.value)}
+                placeholder="Qtd total de camisas no pacote"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="productCost"
+                type="number"
+                min={0}
+                step="0.01"
+                value={productCostInput}
+                onChange={(event) => setProductCostInput(event.target.value)}
+                placeholder="Valor pago ao fornecedor (R$)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="extraFees"
+                type="number"
+                min={0}
+                step="0.01"
+                value={extraFeesInput}
+                onChange={(event) => setExtraFeesInput(event.target.value)}
+                placeholder="Taxa de importacao (R$)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="internalShipping"
+                type="number"
+                min={0}
+                step="0.01"
+                value={internalShippingInput}
+                onChange={(event) => setInternalShippingInput(event.target.value)}
+                placeholder="Frete interno (R$)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="trackingCode"
+                placeholder="Codigo de rastreio (opcional)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="carrier"
+                placeholder="Transportadora (17track, opcional)"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="originCountry"
+                defaultValue="China"
+                placeholder="Pais de origem"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <input
+                name="paidAt"
+                type="date"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <textarea
+                name="packageNotes"
+                placeholder="Observacoes do pacote"
+                className="min-h-[80px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+              <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                Custo final do pacote:{" "}
+                <span className="font-semibold">
+                  R$ {formatMoney(packageSummary.packageFinalCost)}
+                </span>
+                <br />
+                Custo medio por camisa:{" "}
+                <span className="font-semibold">
+                  R$ {formatMoney(packageSummary.averageUnitCost)}
+                </span>
+                <br />
+                Custo alocado neste pedido:{" "}
+                <span className="font-semibold">
+                  R$ {formatMoney(packageSummary.allocatedCost)}
+                </span>
+              </p>
+            </div>
+          )}
         </div>
       </section>
 

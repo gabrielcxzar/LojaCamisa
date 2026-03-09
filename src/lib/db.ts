@@ -69,6 +69,61 @@ const schemaSql = `
     updated_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS import_packages (
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL UNIQUE,
+    supplier_id TEXT,
+    package_quantity INTEGER NOT NULL DEFAULT 0,
+    product_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+    extra_fees DOUBLE PRECISION NOT NULL DEFAULT 0,
+    internal_shipping DOUBLE PRECISION NOT NULL DEFAULT 0,
+    tracking_code TEXT UNIQUE,
+    carrier TEXT,
+    origin_country TEXT,
+    paid_at TEXT,
+    notes TEXT,
+    last_status TEXT,
+    last_update_at TEXT,
+    eta_date TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+  );
+
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS package_quantity INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS product_cost DOUBLE PRECISION NOT NULL DEFAULT 0;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS extra_fees DOUBLE PRECISION NOT NULL DEFAULT 0;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS internal_shipping DOUBLE PRECISION NOT NULL DEFAULT 0;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS tracking_code TEXT;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS carrier TEXT;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS origin_country TEXT;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS paid_at TEXT;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS notes TEXT;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS last_status TEXT;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS last_update_at TEXT;
+  ALTER TABLE import_packages
+    ADD COLUMN IF NOT EXISTS eta_date TEXT;
+
+  CREATE TABLE IF NOT EXISTS order_packages (
+    id TEXT PRIMARY KEY,
+    order_id TEXT NOT NULL UNIQUE,
+    package_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (order_id) REFERENCES orders(id),
+    FOREIGN KEY (package_id) REFERENCES import_packages(id)
+  );
+
   CREATE TABLE IF NOT EXISTS orders (
     id TEXT PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
@@ -185,6 +240,8 @@ const schemaSql = `
 
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
   CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+  CREATE INDEX IF NOT EXISTS idx_import_packages_tracking_code ON import_packages(tracking_code);
+  CREATE INDEX IF NOT EXISTS idx_order_packages_package_id ON order_packages(package_id);
   CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
   CREATE INDEX IF NOT EXISTS idx_logs_order_id ON action_logs(order_id);
 `;

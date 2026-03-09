@@ -1,12 +1,16 @@
 import { Container } from "@/components/layout/container";
 import { NewOrderDetails } from "@/components/admin/new-order-details";
 import { createOrderManual } from "@/app/admin/pedidos/novo/actions";
-import { listProducts, listSuppliers } from "@/lib/db/queries";
+import { listImportPackages, listProducts, listSuppliers } from "@/lib/db/queries";
 import { requireAdmin } from "@/lib/require-admin";
 
 export default async function NewOrderPage() {
   await requireAdmin();
-  const [products, suppliers] = await Promise.all([listProducts(), listSuppliers()]);
+  const [products, suppliers, packages] = await Promise.all([
+    listProducts(),
+    listSuppliers(),
+    listImportPackages(),
+  ]);
   const sortedProducts = products.sort((a, b) => a.name.localeCompare(b.name));
 
   return (
@@ -101,6 +105,12 @@ export default async function NewOrderPage() {
           suppliers={suppliers.map((supplier) => ({
             id: supplier.id,
             name: supplier.name,
+          }))}
+          packages={packages.map((importPackage) => ({
+            id: importPackage.id,
+            code: importPackage.code,
+            trackingCode: importPackage.tracking_code,
+            linkedOrders: Number(importPackage.linked_orders ?? 0),
           }))}
         />
       </form>

@@ -6,6 +6,7 @@ import { Container } from "@/components/layout/container";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
+  getImportPackageByOrderId,
   getOrderDetail,
   getSetting,
   listActionLogs,
@@ -21,6 +22,7 @@ import {
 import { TrackingRefreshButton } from "@/components/admin/tracking-refresh-button";
 import { TrackingAutoRefresh } from "@/components/admin/tracking-auto-refresh";
 import { SupplierCostForm } from "@/components/admin/supplier-cost-form";
+import { translateTrackingStatus } from "@/lib/tracking/status-map";
 
 const statusLabel: Record<string, string> = {
   AWAITING_PAYMENT: "Aguardando pagamento",
@@ -48,10 +50,11 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
 
   const { order, customer, address, items, supplierOrder, shipment, statusHistory, payments } = data;
 
-  const [suppliers, logs, stalledSetting] = await Promise.all([
+  const [suppliers, logs, stalledSetting, importPackage] = await Promise.all([
     listSuppliers(),
     listActionLogs(order.id),
     getSetting("stalled_days"),
+    getImportPackageByOrderId(order.id),
   ]);
   const stalledDays = stalledSetting ? Number(stalledSetting.value) : 7;
   const orderQuantity = items.reduce((sum, item) => sum + Number(item.quantity), 0);
@@ -110,7 +113,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
           },
           shipment.last_update_at
             ? {
-                label: `Atualizacao rastreio: ${shipment.last_status ?? "Status"}`,
+                label: `Atualizacao rastreio: ${translateTrackingStatus(shipment.last_status)} (${shipment.last_status ?? "sem status"})`,
                 date: shipment.last_update_at,
               }
             : null,
@@ -299,6 +302,28 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
             </div>
           </div>
 
+          {importPackage && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+              <h2 className="text-lg font-semibold">Pacote vinculado</h2>
+              <div className="mt-4 space-y-2 text-sm text-neutral-600">
+                <p>
+                  <span className="font-semibold text-neutral-900">{importPackage.code}</span>
+                </p>
+                <p>Pedidos no pacote: {Number(importPackage.linked_orders)}</p>
+                <p>Qtd total pacote: {Number(importPackage.package_quantity)}</p>
+                <p>
+                  Custo final pacote: R${" "}
+                  {(
+                    Number(importPackage.product_cost) +
+                    Number(importPackage.extra_fees) +
+                    Number(importPackage.internal_shipping)
+                  ).toFixed(2)}
+                </p>
+                {importPackage.tracking_code && <p>Rastreio: {importPackage.tracking_code}</p>}
+              </div>
+            </div>
+          )}
+
           <div className="rounded-2xl border border-neutral-200 bg-white p-6">
             <h2 className="text-lg font-semibold">Financeiro do pedido</h2>
             <SupplierCostForm
@@ -307,6 +332,14 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
               orderQuantity={orderQuantity}
               totalSold={totalAmount}
               isPersonalUse={order.is_personal_use === 1}
+              packageInfo={
+                importPackage
+                  ? {
+                      code: importPackage.code,
+                      linkedOrders: Number(importPackage.linked_orders),
+                    }
+                  : null
+              }
               suppliers={suppliers.map((supplier) => ({
                 id: supplier.id,
                 name: supplier.name,
@@ -354,6 +387,11 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
             {shipment && (
               <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-600">
                 <p>Status atual: {shipment.last_status ?? "Sem atualização"}</p>
+                {shipment.last_status && (
+                  <p className="text-xs text-neutral-500">
+                    Leitura simplificada: {translateTrackingStatus(shipment.last_status)}
+                  </p>
+                )}
                 {shipment.eta_date && (
                   <p>
                     Previsão:{" "}

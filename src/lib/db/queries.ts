@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import { db } from "@/lib/db";
+import {
+  mapTrackingStatusToOrderStatus,
+  shouldAdvanceOrderStatus,
+} from "@/lib/tracking/status-map";
 
 function now() {
   return new Date().toISOString();
@@ -63,6 +67,31 @@ type SupplierRow = {
   active: number;
   created_at: string;
   updated_at: string;
+};
+
+type ImportPackageRow = {
+  id: string;
+  code: string;
+  supplier_id: string | null;
+  package_quantity: number;
+  product_cost: number;
+  extra_fees: number;
+  internal_shipping: number;
+  tracking_code: string | null;
+  carrier: string | null;
+  origin_country: string | null;
+  paid_at: string | null;
+  notes: string | null;
+  last_status: string | null;
+  last_update_at: string | null;
+  eta_date: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type ImportPackageSummaryRow = ImportPackageRow & {
+  supplier_name: string | null;
+  linked_orders: number;
 };
 
 type SupplierOrderRow = {
@@ -133,6 +162,7 @@ type OrderItemRow = {
 
 type ListedOrderRow = OrderRow & {
   customer_name: string;
+  package_code: string | null;
 };
 
 type StalledOrderRow = {
@@ -241,7 +271,18 @@ export async function listOrders(filters: {
 
   return db
     .prepare<ListedOrderRow>(
-      `SELECT o.*, c.name as customer_name FROM orders o JOIN customers c ON c.id = o.customer_id ${whereClause} ORDER BY o.created_at DESC`,
+      `
+      SELECT
+        o.*,
+        c.name as customer_name,
+        p.code as package_code
+      FROM orders o
+      JOIN customers c ON c.id = o.customer_id
+      LEFT JOIN order_packages op ON op.order_id = o.id
+      LEFT JOIN import_packages p ON p.id = op.package_id
+      ${whereClause}
+      ORDER BY o.created_at DESC
+      `,
     )
     .all(...params);
 }
@@ -302,6 +343,191 @@ export async function listSuppliers() {
 
 export async function listAllSuppliers() {
   return db.prepare<SupplierRow>("SELECT * FROM suppliers ORDER BY created_at ASC").all();
+}
+
+export async function listImportPackages() {
+  return db
+    .prepare<ImportPackageSummaryRow>(
+      `
+      SELECT
+        p.*,
+        s.name as supplier_name,
+        COUNT(op.order_id) as linked_orders
+      FROM import_packages p
+      LEFT JOIN suppliers s ON s.id = p.supplier_id
+      LEFT JOIN order_packages op ON op.package_id = p.id
+      GROUP BY p.id, s.name
+      ORDER BY p.created_at DESC
+      LIMIT 100
+      `,
+    )
+    .all();
+}
+
+export async function getImportPackageById(packageId: string) {
+  return db
+    .prepare<ImportPackageSummaryRow>(
+      `
+      SELECT
+        p.*,
+        s.name as supplier_name,
+        COUNT(op.order_id) as linked_orders
+      FROM import_packages p
+      LEFT JOIN suppliers s ON s.id = p.supplier_id
+      LEFT JOIN order_packages op ON op.package_id = p.id
+      WHERE p.id = ?
+      GROUP BY p.id, s.name
+      `,
+    )
+    .get(packageId);
+}
+
+export async function getImportPackageByOrderId(orderId: string) {
+  return db
+    .prepare<ImportPackageSummaryRow>(
+      `
+      SELECT
+        p.*,
+        s.name as supplier_name,
+        COUNT(op2.order_id) as linked_orders
+      FROM order_packages op
+      JOIN import_packages p ON p.id = op.package_id
+      LEFT JOIN suppliers s ON s.id = p.supplier_id
+      LEFT JOIN order_packages op2 ON op2.package_id = p.id
+      WHERE op.order_id = ?
+      GROUP BY p.id, s.name
+      LIMIT 1
+      `,
+    )
+    .get(orderId);
+}
+
+export async function upsertImportPackage(data: {
+  packageId?: string;
+  supplierId?: string | null;
+  packageQuantity: number;
+  productCost: number;
+  extraFees: number;
+  internalShipping?: number;
+  trackingCode?: string | null;
+  carrier?: string | null;
+  originCountry?: string | null;
+  paidAt?: string | null;
+  notes?: string | null;
+}) {
+  const nowIso = now();
+  const packageId = data.packageId ?? randomUUID();
+  const packageCode = `PK-${packageId.slice(0, 8).toUpperCase()}`;
+
+  const existing = data.packageId
+    ? await db.prepare<{ id: string }>("SELECT id FROM import_packages WHERE id = ?").get(data.packageId)
+    : undefined;
+
+  if (existing) {
+    await db
+      .prepare(
+        `
+        UPDATE import_packages
+        SET
+          supplier_id = ?,
+          package_quantity = ?,
+          product_cost = ?,
+          extra_fees = ?,
+          internal_shipping = ?,
+          tracking_code = ?,
+          carrier = ?,
+          origin_country = ?,
+          paid_at = ?,
+          notes = ?,
+          updated_at = ?
+        WHERE id = ?
+        `,
+      )
+      .run(
+        data.supplierId ?? null,
+        data.packageQuantity,
+        data.productCost,
+        data.extraFees,
+        data.internalShipping ?? 0,
+        data.trackingCode ?? null,
+        data.carrier ?? null,
+        data.originCountry ?? null,
+        data.paidAt ?? null,
+        data.notes ?? null,
+        nowIso,
+        data.packageId,
+      );
+
+    return existing.id;
+  }
+
+  await db
+    .prepare(
+      `
+      INSERT INTO import_packages (
+        id, code, supplier_id, package_quantity, product_cost, extra_fees, internal_shipping,
+        tracking_code, carrier, origin_country, paid_at, notes, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+    )
+    .run(
+      packageId,
+      packageCode,
+      data.supplierId ?? null,
+      data.packageQuantity,
+      data.productCost,
+      data.extraFees,
+      data.internalShipping ?? 0,
+      data.trackingCode ?? null,
+      data.carrier ?? null,
+      data.originCountry ?? null,
+      data.paidAt ?? null,
+      data.notes ?? null,
+      nowIso,
+      nowIso,
+    );
+
+  return packageId;
+}
+
+export async function linkOrderToImportPackage(orderId: string, packageId: string) {
+  const nowIso = now();
+  const existing = await db
+    .prepare<{ id: string }>("SELECT id FROM order_packages WHERE order_id = ?")
+    .get(orderId);
+
+  if (existing) {
+    await db
+      .prepare("UPDATE order_packages SET package_id = ? WHERE order_id = ?")
+      .run(packageId, orderId);
+    return;
+  }
+
+  await db
+    .prepare("INSERT INTO order_packages (id, order_id, package_id, created_at) VALUES (?, ?, ?, ?)")
+    .run(randomUUID(), orderId, packageId, nowIso);
+}
+
+export async function unlinkOrderFromImportPackage(orderId: string) {
+  await db.prepare("DELETE FROM order_packages WHERE order_id = ?").run(orderId);
+}
+
+export async function getLinkedOrdersForImportPackage(packageId: string) {
+  return db
+    .prepare<{ order_id: string; order_status: string; quantity: number }>(
+      `
+      SELECT
+        o.id as order_id,
+        o.status as order_status,
+        COALESCE(SUM(oi.quantity), 0) as quantity
+      FROM order_packages op
+      JOIN orders o ON o.id = op.order_id
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE op.package_id = ?
+      GROUP BY o.id, o.status
+      `,
+    )
+    .all(packageId);
 }
 
 export async function getSupplierById(id: string) {
@@ -515,6 +741,7 @@ export async function deleteOrder(orderId: string) {
   const tx = db.transaction(async () => {
     await db.prepare("DELETE FROM payments WHERE order_id = ?").run(orderId);
     await db.prepare("DELETE FROM order_status_history WHERE order_id = ?").run(orderId);
+    await db.prepare("DELETE FROM order_packages WHERE order_id = ?").run(orderId);
     await db.prepare("DELETE FROM shipments WHERE order_id = ?").run(orderId);
     await db.prepare("DELETE FROM supplier_orders WHERE order_id = ?").run(orderId);
     await db.prepare("DELETE FROM order_items WHERE order_id = ?").run(orderId);
@@ -649,7 +876,7 @@ export async function listTrackableShipments(options?: {
   return db
     .prepare<TrackableShipmentRow>(
       `
-      SELECT
+      SELECT DISTINCT ON (s.tracking_code)
         s.order_id,
         o.code as order_code,
         o.status as order_status,
@@ -660,7 +887,7 @@ export async function listTrackableShipments(options?: {
       JOIN orders o ON o.id = s.order_id
       WHERE o.status IN ('AWAITING_SUPPLIER', 'PREPARING', 'SHIPPED')
       AND (s.last_update_at IS NULL OR s.last_update_at <= ?)
-      ORDER BY COALESCE(s.last_update_at, o.updated_at) ASC
+      ORDER BY s.tracking_code ASC, COALESCE(s.last_update_at, o.updated_at) ASC
       LIMIT ?
       `,
     )
@@ -751,6 +978,111 @@ export async function upsertSupplierOrder(data: {
         "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
       )
       .run(data.orderId, "OUTGOING", "Fornecedor");
+  }
+}
+
+export async function recalculateImportPackageAllocations(packageId: string) {
+  const importPackage = await db
+    .prepare<ImportPackageRow>("SELECT * FROM import_packages WHERE id = ?")
+    .get(packageId);
+  if (!importPackage) return;
+
+  const linkedOrders = await getLinkedOrdersForImportPackage(packageId);
+  const validLinkedOrders = linkedOrders.filter((item) => Number(item.quantity) > 0);
+  if (validLinkedOrders.length === 0) return;
+
+  const linkedTotalQuantity = validLinkedOrders.reduce(
+    (sum, item) => sum + Number(item.quantity),
+    0,
+  );
+  const packageBaseQuantity = Math.max(
+    1,
+    Math.round(Number(importPackage.package_quantity) || linkedTotalQuantity),
+  );
+  const packageProductCost = Number(importPackage.product_cost ?? 0);
+  const packageExtraFees =
+    Number(importPackage.extra_fees ?? 0) + Number(importPackage.internal_shipping ?? 0);
+  const packageFinalCost = packageProductCost + packageExtraFees;
+  const averageUnitCost = packageFinalCost / packageBaseQuantity;
+
+  for (const linkedOrder of validLinkedOrders) {
+    const linkedQuantity = Number(linkedOrder.quantity);
+    const ratio = linkedQuantity / packageBaseQuantity;
+    const allocatedProductCost = packageProductCost * ratio;
+    const allocatedExtraFees = packageExtraFees * ratio;
+    const allocatedTotalCost = averageUnitCost * linkedQuantity;
+
+    if (importPackage.supplier_id) {
+      await upsertSupplierOrder({
+        orderId: linkedOrder.order_id,
+        supplierId: importPackage.supplier_id,
+        productCost: allocatedProductCost,
+        extraFees: allocatedExtraFees,
+        packageQuantity: packageBaseQuantity,
+        unitCost: averageUnitCost,
+        totalCost: allocatedTotalCost,
+        paidAt: importPackage.paid_at ?? null,
+      });
+    }
+
+    if (importPackage.tracking_code) {
+      await upsertShipment({
+        orderId: linkedOrder.order_id,
+        trackingCode: importPackage.tracking_code,
+        carrier: importPackage.carrier ?? "other",
+        originCountry: importPackage.origin_country ?? "China",
+      });
+
+      const trackingMappedStatus = mapTrackingStatusToOrderStatus(
+        importPackage.last_status ?? "",
+      );
+      if (trackingMappedStatus) {
+        if (
+          shouldAdvanceOrderStatus(linkedOrder.order_status, trackingMappedStatus)
+        ) {
+          await updateOrderStatus(
+            linkedOrder.order_id,
+            trackingMappedStatus,
+            `Status sincronizado pelo pacote ${importPackage.code}: ${importPackage.last_status ?? "sem status"}`,
+          );
+        }
+      } else if (shouldAdvanceOrderStatus(linkedOrder.order_status, "SHIPPED")) {
+        await updateOrderStatus(
+          linkedOrder.order_id,
+          "SHIPPED",
+          `Rastreamento vinculado ao pacote ${importPackage.code}`,
+        );
+      }
+    }
+  }
+}
+
+export async function updateImportPackageTrackingByCode(
+  trackingCode: string,
+  data: {
+    lastStatus?: string | null;
+    lastUpdateAt?: string | null;
+    etaDate?: string | null;
+  },
+) {
+  await db
+    .prepare(
+      "UPDATE import_packages SET last_status = ?, last_update_at = ?, eta_date = ?, updated_at = ? WHERE tracking_code = ?",
+    )
+    .run(
+      data.lastStatus ?? null,
+      data.lastUpdateAt ?? null,
+      data.etaDate ?? null,
+      now(),
+      trackingCode,
+    );
+
+  const linkedPackages = await db
+    .prepare<{ id: string }>("SELECT id FROM import_packages WHERE tracking_code = ?")
+    .all(trackingCode);
+
+  for (const importPackage of linkedPackages) {
+    await recalculateImportPackageAllocations(importPackage.id);
   }
 }
 

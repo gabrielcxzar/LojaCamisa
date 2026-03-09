@@ -111,6 +111,9 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
                 {new Date(order.created_at).toLocaleDateString("pt-BR")} • Total
                 R$ {Number(order.total_amount).toFixed(2)}
               </p>
+              {order.package_code && (
+                <p className="text-xs text-neutral-500">Pacote: {order.package_code}</p>
+              )}
               {order.is_personal_use === 1 && (
                 <p className="text-xs text-amber-700">Uso pessoal (fora do financeiro)</p>
               )}

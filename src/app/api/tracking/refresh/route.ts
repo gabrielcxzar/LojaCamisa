@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 
 import { db } from "@/lib/db";
-import { logAction, updateOrderStatus, updateShipmentStatus } from "@/lib/db/queries";
+import {
+  logAction,
+  updateOrderStatus,
+  updateImportPackageTrackingByCode,
+  updateShipmentStatus,
+} from "@/lib/db/queries";
 import { authOptions } from "@/lib/auth";
 import { getShipmentTrackingUpdate } from "@/lib/tracking";
 import {
@@ -44,6 +49,11 @@ export async function POST(request: Request) {
     }
 
     await updateShipmentStatus(orderId, {
+      lastStatus: update.status,
+      lastUpdateAt: update.lastUpdateAt?.toISOString() ?? null,
+      etaDate: update.etaDate?.toISOString() ?? null,
+    });
+    await updateImportPackageTrackingByCode(shipment.tracking_code, {
       lastStatus: update.status,
       lastUpdateAt: update.lastUpdateAt?.toISOString() ?? null,
       etaDate: update.etaDate?.toISOString() ?? null,

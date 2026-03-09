@@ -25,6 +25,10 @@ type SupplierCostFormProps = {
   orderQuantity: number;
   totalSold: number;
   isPersonalUse: boolean;
+  packageInfo?: {
+    code: string;
+    linkedOrders: number;
+  } | null;
   suppliers: SupplierOption[];
   initial?: SupplierCostInitialValues;
 };
@@ -44,6 +48,7 @@ export function SupplierCostForm({
   orderQuantity,
   totalSold,
   isPersonalUse,
+  packageInfo,
   suppliers,
   initial,
 }: SupplierCostFormProps) {
@@ -161,13 +166,21 @@ export function SupplierCostForm({
       />
       <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
         <p>Qtd do pedido: {Math.max(1, orderQuantity)} camisa(s)</p>
+        {packageInfo && (
+          <p>
+            Pacote {packageInfo.code}: {packageInfo.linkedOrders} pedido(s) vinculado(s)
+          </p>
+        )}
         <p>Custo final do pacote: R$ {toMoney(summary.packageFinalCost)}</p>
         <p>Custo medio por camisa: R$ {toMoney(summary.averageUnitCost)}</p>
         <p>Custo alocado neste pedido: R$ {toMoney(summary.totalOrderCost)}</p>
         <p>Lucro estimado do pedido: R$ {toMoney(summary.estimatedProfit)}</p>
         <p>Margem estimada: {summary.margin.toFixed(1)}%</p>
         <p className="pt-1">
-          Pedido comercial exige valor pago ao fornecedor. A taxa pode ser editada depois.
+          Pedido comercial exige valor pago ao fornecedor.
+          {packageInfo
+            ? " Esta edicao atualiza o pacote inteiro e recalcula todos os pedidos vinculados."
+            : " A taxa pode ser editada depois."}
         </p>
       </div>
       <input
