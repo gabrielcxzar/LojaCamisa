@@ -1,7 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { Container } from "@/components/layout/container";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { createProduct } from "@/app/admin/produtos/novo/actions";
 import { requireAdmin } from "@/lib/require-admin";
 
@@ -57,9 +57,9 @@ export default async function NewProductPage() {
           <input name="active" type="checkbox" defaultChecked />
           Produto ativo no catalogo interno
         </label>
-        <Button type="submit" className="w-full">
+        <SubmitButton pendingLabel="Salvando produto..." className="w-full">
           Salvar produto
-        </Button>
+        </SubmitButton>
       </form>
     </Container>
   );

@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 import { Container } from "@/components/layout/container";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { dbPath } from "@/lib/db";
 import { getProductById } from "@/lib/db/queries";
 import { updateProduct } from "@/app/admin/produtos/[id]/actions";
@@ -91,9 +91,9 @@ export default async function ProductDetailPage({
           <input name="active" type="checkbox" defaultChecked={product.active === 1} />
           Produto ativo no catalogo interno
         </label>
-        <Button type="submit" className="w-full">
+        <SubmitButton pendingLabel="Salvando alteracoes..." className="w-full">
           Salvar alteracoes
-        </Button>
+        </SubmitButton>
       </form>
     </Container>
   );

@@ -3,7 +3,7 @@ export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 
 import { Container } from "@/components/layout/container";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { getSupplierById } from "@/lib/db/queries";
 import { updateSupplier } from "@/app/admin/fornecedores/[id]/actions";
 import { requireAdmin } from "@/lib/require-admin";
@@ -51,9 +51,9 @@ export default async function SupplierDetailPage({
           <input name="active" type="checkbox" defaultChecked={supplier.active === 1} />
           Fornecedor ativo
         </label>
-        <Button type="submit" className="w-full">
+        <SubmitButton pendingLabel="Salvando alteracoes..." className="w-full">
           Salvar alteracoes
-        </Button>
+        </SubmitButton>
       </form>
     </Container>
   );

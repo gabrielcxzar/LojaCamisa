@@ -39,5 +39,5 @@ export async function updateProduct(formData: FormData) {
     active,
   });
 
-  redirect(`/admin/produtos/${id}`);
+  redirect("/admin/produtos");
 }
