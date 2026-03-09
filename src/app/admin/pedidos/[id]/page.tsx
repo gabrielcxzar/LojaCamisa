@@ -119,7 +119,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
   ].filter((event): event is TimelineEvent => Boolean(event && event.date));
 
   timelineEvents.sort(
-    (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
+    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
   );
 
   return (

@@ -1,4 +1,5 @@
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import {
   deleteOrder,
@@ -316,4 +317,5 @@ export async function deleteOrderAction(formData: FormData) {
   });
 
   revalidatePath(`/admin/pedidos`);
+  redirect("/admin/pedidos");
 }
