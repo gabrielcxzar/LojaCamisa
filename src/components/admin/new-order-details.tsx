@@ -40,6 +40,7 @@ export function NewOrderDetails({ products }: Props) {
   const [customPrice, setCustomPrice] = useState("");
   const [unitPrice, setUnitPrice] = useState("");
   const [quantity, setQuantity] = useState("1");
+  const [orderTotalInput, setOrderTotalInput] = useState("");
   const [paymentType, setPaymentType] = useState("DEPOSIT_50");
   const [amountPaidPercentInput, setAmountPaidPercentInput] = useState("50.00");
   const [amountPaidInput, setAmountPaidInput] = useState("");
@@ -53,7 +54,17 @@ export function NewOrderDetails({ products }: Props) {
     return map;
   }, [products]);
 
+  const quantityValue = useMemo(() => {
+    const qty = parseNumber(quantity);
+    return qty > 0 ? qty : 1;
+  }, [quantity]);
+
   const effectiveUnitPrice = useMemo(() => {
+    const totalInput = parseNumber(orderTotalInput);
+    if (totalInput > 0 && quantityValue > 0) {
+      return totalInput / quantityValue;
+    }
+
     if (productMode === "custom") {
       const custom = parseNumber(customPrice);
       if (custom > 0) return custom;
@@ -63,12 +74,13 @@ export function NewOrderDetails({ products }: Props) {
     const selectedPrice = productPriceMap.get(productSlug) ?? 0;
     const customUnit = parseNumber(unitPrice);
     return customUnit > 0 ? customUnit : selectedPrice;
-  }, [customPrice, productMode, productPriceMap, productSlug, unitPrice]);
+  }, [customPrice, orderTotalInput, productMode, productPriceMap, productSlug, quantityValue, unitPrice]);
 
   const totalOrder = useMemo(() => {
-    const qty = parseNumber(quantity);
-    return (qty > 0 ? qty : 1) * effectiveUnitPrice;
-  }, [effectiveUnitPrice, quantity]);
+    const totalInput = parseNumber(orderTotalInput);
+    if (totalInput > 0) return totalInput;
+    return quantityValue * effectiveUnitPrice;
+  }, [effectiveUnitPrice, orderTotalInput, quantityValue]);
 
   const syncedPaid = useMemo(() => {
     if (syncSource === "percent") {
@@ -201,10 +213,19 @@ export function NewOrderDetails({ products }: Props) {
             className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
           />
           <input
+            name="orderTotal"
+            type="number"
+            step="0.01"
+            placeholder="Valor total do pedido (opcional)"
+            value={orderTotalInput}
+            onChange={(event) => setOrderTotalInput(event.target.value)}
+            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+          />
+          <input
             name="unitPrice"
             type="number"
             step="0.01"
-            placeholder="Preco unitario (opcional)"
+            placeholder="Preco unitario (opcional, se nao informar total)"
             value={unitPrice}
             onChange={(event) => setUnitPrice(event.target.value)}
             className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
@@ -214,7 +235,8 @@ export function NewOrderDetails({ products }: Props) {
             Custo final do produto:{" "}
             <span className="font-semibold">R$ {formatMoney(totalOrder)}</span>
             <br />
-            Base do calculo: quantidade x valor unitario final.
+            Custo medio por camisa:{" "}
+            <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
           </p>
           <select
             name="paymentType"

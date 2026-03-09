@@ -107,6 +107,71 @@ export async function updateSupplierInfo(formData: FormData) {
     productCost = totalCost;
   }
 
+  const shipment = await db
+    .prepare<{ tracking_code: string | null }>(
+      "SELECT tracking_code FROM shipments WHERE order_id = ?",
+    )
+    .get(orderId);
+
+  if (hasPackageData && shipment?.tracking_code) {
+    const linkedOrders = await db
+      .prepare<{ order_id: string; quantity: number }>(
+        `
+        SELECT s.order_id, COALESCE(SUM(oi.quantity), 0) AS quantity
+        FROM shipments s
+        LEFT JOIN order_items oi ON oi.order_id = s.order_id
+        WHERE s.tracking_code = ?
+        GROUP BY s.order_id
+        `,
+      )
+      .all(shipment.tracking_code);
+
+    const validLinkedOrders = linkedOrders.filter((item) => Number(item.quantity) > 0);
+    if (validLinkedOrders.length > 1) {
+      const linkedTotalQuantity = validLinkedOrders.reduce(
+        (sum, item) => sum + Number(item.quantity),
+        0,
+      );
+      const packageBaseQuantity = Math.max(
+        1,
+        Math.round(packageQuantityInput || linkedTotalQuantity),
+      );
+      const packageFinalCost = productCostInput + extraFeesInput;
+      const averageUnitCost = packageFinalCost / packageBaseQuantity;
+
+      for (const linkedOrder of validLinkedOrders) {
+        const linkedQuantity = Number(linkedOrder.quantity);
+        const ratio = linkedQuantity / packageBaseQuantity;
+        const allocatedProductCost = productCostInput * ratio;
+        const allocatedExtraFees = extraFeesInput * ratio;
+        const allocatedTotalCost = averageUnitCost * linkedQuantity;
+
+        await upsertSupplierOrder({
+          orderId: linkedOrder.order_id,
+          supplierId,
+          productCost: allocatedProductCost,
+          extraFees: allocatedExtraFees,
+          packageQuantity: packageBaseQuantity,
+          unitCost: averageUnitCost,
+          totalCost: allocatedTotalCost,
+          paidAt: linkedOrder.order_id === orderId ? paidAt || null : null,
+        });
+
+        revalidatePath(`/admin/pedidos/${linkedOrder.order_id}`);
+      }
+
+      await logAction({
+        userEmail: session.user.email ?? "admin",
+        action: `Rateou custos do pacote ${shipment.tracking_code} em ${validLinkedOrders.length} pedidos`,
+        orderId,
+      });
+
+      revalidatePath("/admin/pedidos");
+      revalidatePath("/admin/financeiro");
+      return;
+    }
+  }
+
   await upsertSupplierOrder({
     orderId,
     supplierId,
@@ -124,6 +189,8 @@ export async function updateSupplierInfo(formData: FormData) {
   });
 
   revalidatePath(`/admin/pedidos/${orderId}`);
+  revalidatePath("/admin/pedidos");
+  revalidatePath("/admin/financeiro");
 }
 
 export async function updateShipmentInfo(formData: FormData) {

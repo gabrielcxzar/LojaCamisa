@@ -32,7 +32,7 @@ const statusLabel: Record<string, string> = {
 };
 
 type OrderDetailProps = {
-  params: { id: string };
+  params: { id: string } | Promise<{ id: string }>;
 };
 
 type TimelineEvent = {
@@ -42,7 +42,8 @@ type TimelineEvent = {
 
 export default async function OrderDetailPage({ params }: OrderDetailProps) {
   await requireAdmin();
-  const data = await getOrderDetail(params.id);
+  const resolvedParams = await Promise.resolve(params);
+  const data = await getOrderDetail(resolvedParams.id);
   if (!data) return notFound();
 
   const { order, customer, address, items, supplierOrder, shipment, statusHistory, payments } = data;

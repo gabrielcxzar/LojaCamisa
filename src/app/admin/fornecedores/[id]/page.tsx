@@ -11,10 +11,11 @@ import { requireAdmin } from "@/lib/require-admin";
 export default async function SupplierDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: { id: string } | Promise<{ id: string }>;
 }) {
   await requireAdmin();
-  const supplier = await getSupplierById(params.id);
+  const resolvedParams = await Promise.resolve(params);
+  const supplier = await getSupplierById(resolvedParams.id);
   if (!supplier) return notFound();
 
   return (

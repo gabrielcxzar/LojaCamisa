@@ -127,6 +127,9 @@ export function SupplierCostForm({
         <p>Custo final do pacote: R$ {toMoney(summary.packageFinalCost)}</p>
         <p>Custo medio por camisa: R$ {toMoney(summary.averageUnitCost)}</p>
         <p>Custo alocado neste pedido: R$ {toMoney(summary.totalOrderCost)}</p>
+        <p className="pt-1">
+          Se houver outros pedidos com o mesmo rastreio, o sistema faz rateio automatico.
+        </p>
       </div>
       <input
         name="paidAt"

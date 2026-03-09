@@ -42,6 +42,7 @@ export async function createOrderManual(formData: FormData) {
 
   const size = String(formData.get("size") ?? "").trim();
   const quantity = normalizeNumber(formData.get("quantity"), 1);
+  const orderTotalInput = normalizeNumber(formData.get("orderTotal"), 0);
   const unitPrice = normalizeNumber(formData.get("unitPrice"), 0);
   const paymentType = String(formData.get("paymentType") ?? "NONE");
   const amountPaidInput = normalizeNumber(formData.get("amountPaid"), -1);
@@ -86,6 +87,7 @@ export async function createOrderManual(formData: FormData) {
 
   let productId = "";
   let finalUnitPrice = unitPrice;
+  const qty = quantity > 0 ? quantity : 1;
 
   if (productMode === "existing") {
     if (!productSlug) {
@@ -99,6 +101,9 @@ export async function createOrderManual(formData: FormData) {
     if (!finalUnitPrice || finalUnitPrice <= 0) {
       finalUnitPrice = Number(product.base_price);
     }
+    if (finalUnitPrice <= 0 && orderTotalInput > 0) {
+      finalUnitPrice = orderTotalInput / qty;
+    }
   } else {
     const finalName = customName || "Camisa de time sob encomenda";
     const finalTeam = customTeam || "Time nao informado";
@@ -106,8 +111,12 @@ export async function createOrderManual(formData: FormData) {
     const finalDescription = customDescription || "Pedido rapido criado no painel.";
     finalUnitPrice = customPrice > 0 ? customPrice : finalUnitPrice;
 
+    if (finalUnitPrice <= 0 && orderTotalInput > 0) {
+      finalUnitPrice = orderTotalInput / qty;
+    }
+
     if (finalUnitPrice <= 0) {
-      throw new Error("Informe o preco unitario da camisa.");
+      throw new Error("Informe o valor total do pedido ou preco unitario da camisa.");
     }
 
     const slugBase = slugify(`${finalTeam}-${finalModel}-${finalName}`) || "camisa";
@@ -121,10 +130,15 @@ export async function createOrderManual(formData: FormData) {
     });
   }
 
-  const qty = quantity > 0 ? quantity : 1;
-  const total = finalUnitPrice * qty;
+  if (finalUnitPrice <= 0 && orderTotalInput > 0) {
+    finalUnitPrice = orderTotalInput / qty;
+  }
   if (finalUnitPrice <= 0) {
-    throw new Error("Preco unitario invalido.");
+    throw new Error("Preco unitario invalido. Informe total do pedido ou preco unitario.");
+  }
+  const total = orderTotalInput > 0 ? orderTotalInput : finalUnitPrice * qty;
+  if (total <= 0) {
+    throw new Error("Total do pedido invalido.");
   }
   let amountPaid =
     paymentType === "FULL" ? total : paymentType === "DEPOSIT_50" ? total * 0.5 : 0;
