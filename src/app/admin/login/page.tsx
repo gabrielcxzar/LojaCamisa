@@ -1,5 +1,6 @@
 "use client";
 
+import { Loader2 } from "lucide-react";
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
@@ -7,11 +8,14 @@ import { Button } from "@/components/ui/button";
 
 export default function AdminLoginPage() {
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "authenticating" | "redirecting">("idle");
+  const loading = phase !== "idle";
 
   async function handleSubmit(formData: FormData) {
+    if (loading) return;
+
     setError(null);
-    setLoading(true);
+    setPhase("authenticating");
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
 
@@ -25,6 +29,7 @@ export default function AdminLoginPage() {
 
       if (!result) {
         setError("Falha ao entrar. Tente novamente.");
+        setPhase("idle");
         return;
       }
 
@@ -34,9 +39,11 @@ export default function AdminLoginPage() {
         } else {
           setError(`Falha ao entrar (${result.error}).`);
         }
+        setPhase("idle");
         return;
       }
 
+      setPhase("redirecting");
       if (result.url) {
         window.location.assign(result.url);
         return;
@@ -45,8 +52,7 @@ export default function AdminLoginPage() {
       window.location.assign("/admin");
     } catch {
       setError("Erro ao entrar. Tente novamente.");
-    } finally {
-      setLoading(false);
+      setPhase("idle");
     }
   }
 
@@ -55,7 +61,9 @@ export default function AdminLoginPage() {
       <div className="mx-auto flex min-h-screen max-w-md items-center px-6">
         <form
           action={handleSubmit}
-          className="w-full space-y-6 rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm"
+          className={`w-full space-y-6 rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm transition ${
+            loading ? "opacity-95" : "opacity-100"
+          }`}
         >
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
@@ -72,6 +80,7 @@ export default function AdminLoginPage() {
               type="email"
               required
               placeholder="Email"
+              disabled={loading}
               className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
             />
             <input
@@ -79,16 +88,32 @@ export default function AdminLoginPage() {
               type="password"
               required
               placeholder="Senha"
+              disabled={loading}
               className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
             />
           </div>
+          {loading && (
+            <p className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-2 text-sm text-neutral-600">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {phase === "authenticating"
+                ? "Validando credenciais..."
+                : "Entrando no painel..."}
+            </p>
+          )}
           {error && (
             <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
               {error}
             </p>
           )}
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Entrando..." : "Entrar"}
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {phase === "authenticating" ? "Validando..." : "Entrando..."}
+              </span>
+            ) : (
+              "Entrar"
+            )}
           </Button>
         </form>
       </div>
