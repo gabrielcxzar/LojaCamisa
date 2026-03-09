@@ -65,161 +65,179 @@ export async function updateSupplierInfo(formData: FormData) {
   const paidAt = String(formData.get("paidAt") ?? "");
 
   if (!orderId) return;
-  if (
-    totalSold < 0 ||
-    legacyUnitCost < 0 ||
-    legacyTotalCost < 0 ||
-    packageQuantityInput < 0 ||
-    productCostInput < 0 ||
-    extraFeesInput < 0
-  ) {
-    throw new Error("Valores financeiros invalidos.");
-  }
-  if (!isPersonalUse && totalSold <= 0) {
-    throw new Error("Informe o valor vendido total do pedido.");
-  }
-  if (!isPersonalUse && productCostInput <= 0) {
-    throw new Error("Pedido comercial exige valor pago ao fornecedor.");
-  }
 
-  await updateOrderSaleData({
-    orderId,
-    totalAmount: totalSold,
-    isPersonalUse,
-  });
-
-  if (!supplierId) {
-    if (!isPersonalUse) {
-      throw new Error("Selecione um fornecedor para pedido comercial.");
+  try {
+    if (
+      totalSold < 0 ||
+      legacyUnitCost < 0 ||
+      legacyTotalCost < 0 ||
+      packageQuantityInput < 0 ||
+      productCostInput < 0 ||
+      extraFeesInput < 0
+    ) {
+      throw new Error("Valores financeiros invalidos.");
+    }
+    if (!isPersonalUse && totalSold <= 0) {
+      throw new Error("Informe o valor vendido total do pedido.");
+    }
+    if (!isPersonalUse && productCostInput <= 0) {
+      throw new Error("Pedido comercial exige valor pago ao fornecedor.");
     }
 
-    await logAction({
-      userEmail: session.user.email ?? "admin",
-      action: "Atualizou financeiro (uso pessoal)",
+    await updateOrderSaleData({
       orderId,
+      totalAmount: totalSold,
+      isPersonalUse,
     });
 
-    revalidatePath(`/admin/pedidos/${orderId}`);
-    revalidatePath("/admin/pedidos");
-    revalidatePath("/admin/financeiro");
-    return;
-  }
-
-  const quantityRow = await db
-    .prepare<{ quantity: number }>(
-      "SELECT COALESCE(SUM(quantity), 0) AS quantity FROM order_items WHERE order_id = ?",
-    )
-    .get(orderId);
-  const orderQuantity = Number(quantityRow?.quantity ?? 0);
-  if (orderQuantity <= 0) {
-    throw new Error("Pedido sem quantidade valida para calcular custo medio.");
-  }
-
-  const hasPackageData =
-    formData.get("packageQuantity") !== null ||
-    formData.get("productCost") !== null ||
-    formData.get("extraFees") !== null;
-
-  let packageQuantity = orderQuantity;
-  let productCost = legacyTotalCost;
-  let extraFees = 0;
-  let unitCost = legacyUnitCost;
-  let totalCost = legacyTotalCost;
-
-  if (hasPackageData) {
-    packageQuantity = Math.max(1, Math.round(packageQuantityInput || orderQuantity));
-    productCost = productCostInput;
-    extraFees = extraFeesInput;
-
-    const packageFinalCost = productCost + extraFees;
-    unitCost = packageFinalCost / packageQuantity;
-    totalCost = unitCost * orderQuantity;
-  } else if (unitCost <= 0 && totalCost > 0) {
-    unitCost = totalCost / orderQuantity;
-    packageQuantity = orderQuantity;
-    productCost = totalCost;
-  }
-
-  const shipment = await db
-    .prepare<{ tracking_code: string | null }>(
-      "SELECT tracking_code FROM shipments WHERE order_id = ?",
-    )
-    .get(orderId);
-
-  if (hasPackageData && shipment?.tracking_code) {
-    const linkedOrders = await db
-      .prepare<{ order_id: string; quantity: number }>(
-        `
-        SELECT s.order_id, COALESCE(SUM(oi.quantity), 0) AS quantity
-        FROM shipments s
-        LEFT JOIN order_items oi ON oi.order_id = s.order_id
-        WHERE s.tracking_code = ?
-        GROUP BY s.order_id
-        `,
-      )
-      .all(shipment.tracking_code);
-
-    const validLinkedOrders = linkedOrders.filter((item) => Number(item.quantity) > 0);
-    if (validLinkedOrders.length > 1) {
-      const linkedTotalQuantity = validLinkedOrders.reduce(
-        (sum, item) => sum + Number(item.quantity),
-        0,
-      );
-      const packageBaseQuantity = Math.max(
-        1,
-        Math.round(packageQuantityInput || linkedTotalQuantity),
-      );
-      const packageFinalCost = productCostInput + extraFeesInput;
-      const averageUnitCost = packageFinalCost / packageBaseQuantity;
-
-      for (const linkedOrder of validLinkedOrders) {
-        const linkedQuantity = Number(linkedOrder.quantity);
-        const ratio = linkedQuantity / packageBaseQuantity;
-        const allocatedProductCost = productCostInput * ratio;
-        const allocatedExtraFees = extraFeesInput * ratio;
-        const allocatedTotalCost = averageUnitCost * linkedQuantity;
-
-        await upsertSupplierOrder({
-          orderId: linkedOrder.order_id,
-          supplierId,
-          productCost: allocatedProductCost,
-          extraFees: allocatedExtraFees,
-          packageQuantity: packageBaseQuantity,
-          unitCost: averageUnitCost,
-          totalCost: allocatedTotalCost,
-          paidAt: linkedOrder.order_id === orderId ? paidAt || null : null,
-        });
-
-        revalidatePath(`/admin/pedidos/${linkedOrder.order_id}`);
+    if (!supplierId) {
+      if (!isPersonalUse) {
+        throw new Error("Selecione um fornecedor para pedido comercial.");
       }
 
       await logAction({
         userEmail: session.user.email ?? "admin",
-        action: `Rateou custos do pacote ${shipment.tracking_code} em ${validLinkedOrders.length} pedidos`,
+        action: "Atualizou financeiro (uso pessoal)",
         orderId,
       });
 
+      revalidatePath(`/admin/pedidos/${orderId}`);
       revalidatePath("/admin/pedidos");
       revalidatePath("/admin/financeiro");
       return;
     }
-  }
 
-  await upsertSupplierOrder({
-    orderId,
-    supplierId,
-    productCost,
-    extraFees,
-    packageQuantity,
-    unitCost,
-    totalCost,
-    paidAt: paidAt || null,
-  });
-  await logAction({
-    userEmail: session.user.email ?? "admin",
-    action: "Atualizou financeiro do pedido",
-    orderId,
-  });
+    const quantityRow = await db
+      .prepare<{ quantity: number }>(
+        "SELECT COALESCE(SUM(quantity), 0) AS quantity FROM order_items WHERE order_id = ?",
+      )
+      .get(orderId);
+    const orderQuantity = Number(quantityRow?.quantity ?? 0);
+    if (orderQuantity <= 0) {
+      throw new Error("Pedido sem quantidade valida para calcular custo medio.");
+    }
+
+    const hasPackageData =
+      formData.get("packageQuantity") !== null ||
+      formData.get("productCost") !== null ||
+      formData.get("extraFees") !== null;
+
+    let packageQuantity = orderQuantity;
+    let productCost = legacyTotalCost;
+    let extraFees = 0;
+    let unitCost = legacyUnitCost;
+    let totalCost = legacyTotalCost;
+
+    if (hasPackageData) {
+      packageQuantity = Math.max(1, Math.round(packageQuantityInput || orderQuantity));
+      productCost = productCostInput;
+      extraFees = extraFeesInput;
+
+      const packageFinalCost = productCost + extraFees;
+      unitCost = packageFinalCost / packageQuantity;
+      totalCost = unitCost * orderQuantity;
+    } else if (unitCost <= 0 && totalCost > 0) {
+      unitCost = totalCost / orderQuantity;
+      packageQuantity = orderQuantity;
+      productCost = totalCost;
+    }
+
+    const shipment = await db
+      .prepare<{ tracking_code: string | null }>(
+        "SELECT tracking_code FROM shipments WHERE order_id = ?",
+      )
+      .get(orderId);
+
+    if (hasPackageData && shipment?.tracking_code) {
+      const linkedOrders = await db
+        .prepare<{ order_id: string; quantity: number }>(
+          `
+          SELECT s.order_id, COALESCE(SUM(oi.quantity), 0) AS quantity
+          FROM shipments s
+          LEFT JOIN order_items oi ON oi.order_id = s.order_id
+          WHERE s.tracking_code = ?
+          GROUP BY s.order_id
+          `,
+        )
+        .all(shipment.tracking_code);
+
+      const validLinkedOrders = linkedOrders.filter((item) => Number(item.quantity) > 0);
+      if (validLinkedOrders.length > 1) {
+        const linkedTotalQuantity = validLinkedOrders.reduce(
+          (sum, item) => sum + Number(item.quantity),
+          0,
+        );
+        const packageBaseQuantity = Math.max(
+          1,
+          Math.round(packageQuantityInput || linkedTotalQuantity),
+        );
+        const packageFinalCost = productCostInput + extraFeesInput;
+        const averageUnitCost = packageFinalCost / packageBaseQuantity;
+
+        for (const linkedOrder of validLinkedOrders) {
+          const linkedQuantity = Number(linkedOrder.quantity);
+          const ratio = linkedQuantity / packageBaseQuantity;
+          const allocatedProductCost = productCostInput * ratio;
+          const allocatedExtraFees = extraFeesInput * ratio;
+          const allocatedTotalCost = averageUnitCost * linkedQuantity;
+
+          await upsertSupplierOrder({
+            orderId: linkedOrder.order_id,
+            supplierId,
+            productCost: allocatedProductCost,
+            extraFees: allocatedExtraFees,
+            packageQuantity: packageBaseQuantity,
+            unitCost: averageUnitCost,
+            totalCost: allocatedTotalCost,
+            paidAt: linkedOrder.order_id === orderId ? paidAt || null : null,
+          });
+
+          revalidatePath(`/admin/pedidos/${linkedOrder.order_id}`);
+        }
+
+        await logAction({
+          userEmail: session.user.email ?? "admin",
+          action: `Rateou custos do pacote ${shipment.tracking_code} em ${validLinkedOrders.length} pedidos`,
+          orderId,
+        });
+
+        revalidatePath("/admin/pedidos");
+        revalidatePath("/admin/financeiro");
+        return;
+      }
+    }
+
+    await upsertSupplierOrder({
+      orderId,
+      supplierId,
+      productCost,
+      extraFees,
+      packageQuantity,
+      unitCost,
+      totalCost,
+      paidAt: paidAt || null,
+    });
+    await logAction({
+      userEmail: session.user.email ?? "admin",
+      action: "Atualizou financeiro do pedido",
+      orderId,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Erro inesperado ao salvar financeiro";
+    console.error("Falha em updateSupplierInfo", {
+      orderId,
+      supplierId,
+      isPersonalUse,
+      totalSold,
+      message,
+    });
+    await logAction({
+      userEmail: session.user.email ?? "admin",
+      action: `Falha ao atualizar financeiro: ${message}`,
+      orderId,
+    });
+  }
 
   revalidatePath(`/admin/pedidos/${orderId}`);
   revalidatePath("/admin/pedidos");
