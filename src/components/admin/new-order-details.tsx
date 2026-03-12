@@ -29,6 +29,15 @@ type Props = {
   packages: ImportPackageOption[];
 };
 
+type QuickItemInput = {
+  id: number;
+  team: string;
+  model: string;
+  description: string;
+  size: string;
+  quantity: string;
+};
+
 function parseNumber(value: string) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -48,11 +57,24 @@ function defaultPercentByPaymentType(paymentType: string) {
   return 0;
 }
 
+const SHIRT_SIZES = ["PP", "P", "M", "G", "GG"];
+
 export function NewOrderDetails({ products, suppliers, packages }: Props) {
   const [entryMode, setEntryMode] = useState<"quick" | "advanced">("quick");
   const [productMode, setProductMode] = useState<"custom" | "existing">("custom");
   const [productSlug, setProductSlug] = useState("");
   const [quantity, setQuantity] = useState("1");
+  const [quickItems, setQuickItems] = useState<QuickItemInput[]>([
+    {
+      id: 1,
+      team: "",
+      model: "",
+      description: "",
+      size: "M",
+      quantity: "1",
+    },
+  ]);
+  const [nextQuickItemId, setNextQuickItemId] = useState(2);
   const [orderTotalInput, setOrderTotalInput] = useState("");
   const [paymentType, setPaymentType] = useState("DEPOSIT_50");
   const [amountPaidPercentInput, setAmountPaidPercentInput] = useState("50.00");
@@ -80,9 +102,17 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
   }, [products]);
 
   const quantityValue = useMemo(() => {
+    if (entryMode === "quick") {
+      const total = quickItems.reduce((sum, item) => {
+        const qty = parseNumber(item.quantity);
+        return sum + (qty > 0 ? qty : 1);
+      }, 0);
+      return total > 0 ? total : 1;
+    }
+
     const qty = parseNumber(quantity);
     return qty > 0 ? qty : 1;
-  }, [quantity]);
+  }, [entryMode, quantity, quickItems]);
 
   const effectiveUnitPrice = useMemo(() => {
     const totalInput = parseNumber(orderTotalInput);
@@ -170,8 +200,41 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
     }
   }
 
+  function updateQuickItem(
+    id: number,
+    field: keyof Omit<QuickItemInput, "id">,
+    value: string,
+  ) {
+    setQuickItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
+    );
+  }
+
+  function addQuickItem() {
+    setQuickItems((current) => [
+      ...current,
+      {
+        id: nextQuickItemId,
+        team: "",
+        model: "",
+        description: "",
+        size: "M",
+        quantity: "1",
+      },
+    ]);
+    setNextQuickItemId((current) => current + 1);
+  }
+
+  function removeQuickItem(id: number) {
+    setQuickItems((current) => {
+      if (current.length === 1) return current;
+      return current.filter((item) => item.id !== id);
+    });
+  }
+
   return (
     <div className="space-y-8">
+      <input type="hidden" name="entryMode" value={entryMode} />
       <section>
         <h2 className="text-lg font-semibold">Modo de cadastro</h2>
         <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 sm:grid-cols-2">
@@ -206,25 +269,84 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
         />
 
         {entryMode === "quick" ? (
-          <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
+          <div className="mt-4 space-y-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
             <input type="hidden" name="customName" value="Camisa de time sob encomenda" />
-            <input
-              name="customTeam"
-              placeholder="Time (ex: Vitoria)"
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-            />
-            <input
-              name="customModel"
-              placeholder="Modelo (ex: 2025 torcedor)"
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-            />
-            <input
-              name="customDescription"
-              placeholder="Descricao curta (opcional)"
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-            />
+            {quickItems.map((item, index) => (
+              <div
+                key={item.id}
+                className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
+              >
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-500">
+                    Modelo {index + 1}
+                  </p>
+                  {quickItems.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeQuickItem(item.id)}
+                      className="text-xs font-semibold text-red-600 hover:text-red-700"
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+                <input
+                  name="quickItemTeam"
+                  placeholder="Time (ex: Vitoria)"
+                  value={item.team}
+                  onChange={(event) => updateQuickItem(item.id, "team", event.target.value)}
+                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                />
+                <input
+                  name="quickItemModel"
+                  placeholder="Modelo (ex: 2025 torcedor)"
+                  value={item.model}
+                  onChange={(event) => updateQuickItem(item.id, "model", event.target.value)}
+                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <select
+                    name="quickItemSize"
+                    value={item.size}
+                    onChange={(event) => updateQuickItem(item.id, "size", event.target.value)}
+                    className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                  >
+                    {SHIRT_SIZES.map((shirtSize) => (
+                      <option key={shirtSize} value={shirtSize}>
+                        Tamanho {shirtSize}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    name="quickItemQuantity"
+                    type="number"
+                    min={1}
+                    value={item.quantity}
+                    onChange={(event) => updateQuickItem(item.id, "quantity", event.target.value)}
+                    className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                  />
+                </div>
+                <input
+                  name="quickItemDescription"
+                  placeholder="Descricao curta (opcional)"
+                  value={item.description}
+                  onChange={(event) =>
+                    updateQuickItem(item.id, "description", event.target.value)
+                  }
+                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                />
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addQuickItem}
+              className="rounded-full border border-neutral-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700 hover:border-neutral-500"
+            >
+              Adicionar modelo
+            </button>
             <p className="text-xs text-neutral-500">
-              O sistema salva como pedido rapido sem criar produto no catalogo.
+              Um unico pedido pode conter varios modelos. O sistema salva sem criar produto no
+              catalogo.
             </p>
           </div>
         ) : (
@@ -289,25 +411,39 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
       <section>
         <h2 className="text-lg font-semibold">Pedido</h2>
         <div className="mt-4 grid gap-4">
-          <select
-            name="size"
-            defaultValue="M"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          >
-            {["PP", "P", "M", "G", "GG"].map((size) => (
-              <option key={size} value={size}>
-                Tamanho {size}
-              </option>
-            ))}
-          </select>
-          <input
-            name="quantity"
-            type="number"
-            min={1}
-            value={quantity}
-            onChange={(event) => setQuantity(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
+          {entryMode === "quick" ? (
+            <>
+              <input type="hidden" name="size" value="M" />
+              <input type="hidden" name="quantity" value={String(quantityValue)} />
+              <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                Modelos no pedido: <span className="font-semibold">{quickItems.length}</span>
+                <br />
+                Quantidade total: <span className="font-semibold">{quantityValue} camisa(s)</span>
+              </p>
+            </>
+          ) : (
+            <>
+              <select
+                name="size"
+                defaultValue="M"
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              >
+                {SHIRT_SIZES.map((shirtSize) => (
+                  <option key={shirtSize} value={shirtSize}>
+                    Tamanho {shirtSize}
+                  </option>
+                ))}
+              </select>
+              <input
+                name="quantity"
+                type="number"
+                min={1}
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              />
+            </>
+          )}
           <input
             name="orderTotal"
             type="number"

@@ -637,13 +637,24 @@ export async function upsertSupplier(data: {
   return id;
 }
 
-export async function createOrder(data: {
+export type CreateOrderItemInput = {
   productId?: string | null;
   itemName: string;
   itemDescription?: string | null;
   size: string;
   quantity: number;
   unitPrice: number;
+  totalPrice?: number;
+};
+
+export async function createOrder(data: {
+  items?: CreateOrderItemInput[];
+  productId?: string | null;
+  itemName?: string;
+  itemDescription?: string | null;
+  size?: string;
+  quantity?: number;
+  unitPrice?: number;
   total: number;
   paymentType: string;
   amountPaid: number;
@@ -665,6 +676,42 @@ export async function createOrder(data: {
   };
 }) {
   const tx = db.transaction(async () => {
+    const normalizedItems =
+      data.items && data.items.length > 0
+        ? data.items
+            .map((item) => ({
+              productId: item.productId ?? null,
+              itemName: item.itemName?.trim() || "Camisa de time sob encomenda",
+              itemDescription: item.itemDescription?.trim() || null,
+              size: item.size?.trim() || "M",
+              quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+              unitPrice: Number(item.unitPrice) >= 0 ? Number(item.unitPrice) : 0,
+              totalPrice:
+                Number(item.totalPrice) >= 0
+                  ? Number(item.totalPrice)
+                  : (Number(item.quantity) > 0 ? Number(item.quantity) : 1) *
+                    (Number(item.unitPrice) >= 0 ? Number(item.unitPrice) : 0),
+            }))
+            .filter((item) => item.quantity > 0)
+        : [];
+
+    if (normalizedItems.length === 0) {
+      const fallbackQuantity = Number(data.quantity) > 0 ? Number(data.quantity) : 1;
+      const fallbackUnitPrice =
+        Number(data.unitPrice) >= 0
+          ? Number(data.unitPrice)
+          : Number(data.total) / fallbackQuantity;
+      normalizedItems.push({
+        productId: data.productId ?? null,
+        itemName: data.itemName?.trim() || "Camisa de time sob encomenda",
+        itemDescription: data.itemDescription?.trim() || null,
+        size: data.size?.trim() || "M",
+        quantity: fallbackQuantity,
+        unitPrice: fallbackUnitPrice,
+        totalPrice: Number(data.total),
+      });
+    }
+
     const orderId = randomUUID();
     const customerId = randomUUID();
     const addressId = randomUUID();
@@ -725,21 +772,23 @@ export async function createOrder(data: {
         nowIso,
       );
 
-    await db
-      .prepare(
-        "INSERT INTO order_items (id, order_id, product_id, item_name, item_description, size, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(
-        randomUUID(),
-        orderId,
-        data.productId ?? null,
-        data.itemName,
-        data.itemDescription ?? null,
-        data.size,
-        data.quantity,
-        data.unitPrice,
-        data.total,
-      );
+    for (const item of normalizedItems) {
+      await db
+        .prepare(
+          "INSERT INTO order_items (id, order_id, product_id, item_name, item_description, size, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          randomUUID(),
+          orderId,
+          item.productId ?? null,
+          item.itemName,
+          item.itemDescription ?? null,
+          item.size,
+          item.quantity,
+          item.unitPrice,
+          item.totalPrice ?? item.quantity * item.unitPrice,
+        );
+    }
 
     await db
       .prepare(

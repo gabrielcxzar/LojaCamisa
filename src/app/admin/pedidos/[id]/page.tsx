@@ -157,9 +157,16 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
             <div className="mt-4 space-y-3 text-sm text-neutral-600">
               {items.map((item) => (
                 <div key={item.id} className="flex justify-between">
-                  <span>
-                    {item.name} • {item.size} • {item.quantity} un.
-                  </span>
+                  <div>
+                    <span>
+                      {item.name} • {item.size} • {item.quantity} un.
+                    </span>
+                    {(item.item_description || item.description) && (
+                      <p className="text-xs text-neutral-500">
+                        {item.item_description || item.description}
+                      </p>
+                    )}
+                  </div>
                   <span>R$ {Number(item.total_price).toFixed(2)}</span>
                 </div>
               ))}

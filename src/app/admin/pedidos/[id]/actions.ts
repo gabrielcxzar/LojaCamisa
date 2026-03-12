@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  type CreateOrderItemInput,
   createOrder,
   deleteOrder,
   getOrderDetail,
@@ -349,16 +350,22 @@ export async function duplicateOrderAction(formData: FormData) {
   }
 
   const { order, customer, address, items } = data;
-  const firstItem = items[0];
   const fallbackEmail = `cliente-${Date.now()}@local.invalid`;
+  const duplicatedItems: CreateOrderItemInput[] = items.map((item) => ({
+    productId: item.product_id ?? null,
+    itemName: item.item_name ?? item.name ?? "Camisa de time sob encomenda",
+    itemDescription: item.item_description ?? null,
+    size: item.size,
+    quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+    unitPrice: Number(item.unit_price),
+    totalPrice:
+      Number(item.total_price) > 0
+        ? Number(item.total_price)
+        : (Number(item.quantity) > 0 ? Number(item.quantity) : 1) * Number(item.unit_price),
+  }));
 
   const duplicated = await createOrder({
-    productId: firstItem.product_id ?? null,
-    itemName: firstItem.item_name ?? firstItem.name ?? "Camisa de time sob encomenda",
-    itemDescription: firstItem.item_description ?? null,
-    size: firstItem.size,
-    quantity: Number(firstItem.quantity) > 0 ? Number(firstItem.quantity) : 1,
-    unitPrice: Number(firstItem.unit_price),
+    items: duplicatedItems,
     total: Number(order.total_amount),
     paymentType: order.payment_type,
     amountPaid: 0,

@@ -38,6 +38,9 @@ export default function AdminLayout({
             <Link href="/admin/financeiro" className="hover:text-black">
               Financeiro
             </Link>
+            <Link href="/admin/orcamento" className="hover:text-black">
+              Orcamento
+            </Link>
             <Link href="/admin/configuracoes" className="hover:text-black">
               Configuracoes
             </Link>

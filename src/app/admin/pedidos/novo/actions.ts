@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/require-admin";
 import { registerShipmentTracking } from "@/lib/tracking";
 import {
+  type CreateOrderItemInput,
   createOrder,
   getImportPackageById,
   getProductBySlug,
@@ -18,10 +19,15 @@ function normalizeNumber(value: FormDataEntryValue | null, fallback = 0) {
   return Number.isFinite(num) ? num : fallback;
 }
 
+function normalizeText(value: FormDataEntryValue | null | undefined) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 export async function createOrderManual(formData: FormData) {
   "use server";
 
   const session = await requireAdmin();
+  const entryMode = String(formData.get("entryMode") ?? "quick").trim();
   const productMode = String(formData.get("productMode") ?? "custom");
   const productSlug = String(formData.get("productSlug") ?? "").trim();
   const customName = String(formData.get("customName") ?? "").trim();
@@ -64,10 +70,41 @@ export async function createOrderManual(formData: FormData) {
   const state = String(formData.get("state") ?? "").trim();
   const postalCode = String(formData.get("postalCode") ?? "").trim();
   const country = String(formData.get("country") ?? "Brasil").trim();
+  const quickTeams = formData.getAll("quickItemTeam");
+  const quickModels = formData.getAll("quickItemModel");
+  const quickDescriptions = formData.getAll("quickItemDescription");
+  const quickSizes = formData.getAll("quickItemSize");
+  const quickQuantities = formData.getAll("quickItemQuantity");
 
   const email = emailInput || `cliente-${Date.now()}@local.invalid`;
 
-  if (!name || !line1 || !city || !state || !size) {
+  const quickRowsCount = Math.max(
+    quickTeams.length,
+    quickModels.length,
+    quickDescriptions.length,
+    quickSizes.length,
+    quickQuantities.length,
+  );
+  const quickItems = Array.from({ length: quickRowsCount }, (_, index) => {
+    const team = normalizeText(quickTeams[index]);
+    const model = normalizeText(quickModels[index]);
+    const description = normalizeText(quickDescriptions[index]);
+    const itemSize = normalizeText(quickSizes[index]) || "M";
+    const itemQty = normalizeNumber(quickQuantities[index] ?? null, 1);
+
+    return {
+      team,
+      model,
+      description,
+      size: itemSize,
+      quantity: itemQty > 0 ? itemQty : 1,
+    };
+  }).filter((item, index) =>
+    index === 0 || Boolean(item.team || item.model || item.description),
+  );
+  const isQuickMultiItem = entryMode === "quick" && quickItems.length > 0;
+
+  if (!name || !line1 || !city || !state || (!isQuickMultiItem && !size)) {
     throw new Error("Dados incompletos para criar pedido.");
   }
 
@@ -77,9 +114,8 @@ export async function createOrderManual(formData: FormData) {
   }
 
   const qty = quantity > 0 ? quantity : 1;
-  let productId: string | null = null;
-  let itemName = "Camisa de time sob encomenda";
-  let itemDescription: string | null = null;
+  const defaultItemName = customName || "Camisa de time sob encomenda";
+  let items: CreateOrderItemInput[] = [];
   let finalUnitPrice = unitPriceInput;
   let finalNotes = notes || null;
 
@@ -93,20 +129,61 @@ export async function createOrderManual(formData: FormData) {
       throw new Error("Produto selecionado invalido.");
     }
 
-    productId = product.id;
-    itemName = product.name;
-    itemDescription = product.description;
+    items = [
+      {
+        productId: product.id,
+        itemName: product.name,
+        itemDescription: product.description,
+        size,
+        quantity: qty,
+        unitPrice: 0,
+      },
+    ];
 
     if (finalUnitPrice <= 0) {
       finalUnitPrice = orderTotalInput > 0 ? orderTotalInput / qty : Number(product.base_price);
     }
+  } else if (isQuickMultiItem) {
+    items = quickItems.map((item) => ({
+      itemName: defaultItemName,
+      itemDescription: [item.team || "Time nao informado", item.model || "Sem modelo", item.description]
+        .filter(Boolean)
+        .join(" | "),
+      size: item.size,
+      quantity: item.quantity,
+      unitPrice: 0,
+    }));
+
+    const quickDetails = quickItems
+      .map((item, index) => {
+        const itemParts = [
+          `${index + 1}) Time: ${item.team || "Time nao informado"}`,
+          `Modelo: ${item.model || "Sem modelo"}`,
+          `Tam: ${item.size}`,
+          `Qtd: ${item.quantity}`,
+          item.description ? `Descricao: ${item.description}` : null,
+        ]
+          .filter(Boolean)
+          .join(" | ");
+        return itemParts;
+      })
+      .join("\n");
+    const quickNote = `[Pedido rapido multiplo]\n${quickDetails}`;
+    finalNotes = finalNotes ? `${finalNotes}\n\n${quickNote}` : quickNote;
   } else {
     const finalName = customName || "Camisa de time sob encomenda";
     const finalTeam = customTeam || "Time nao informado";
     const finalModel = customModel || "Sem modelo";
 
-    itemName = finalName;
-    itemDescription = [finalTeam, finalModel, customDescription].filter(Boolean).join(" | ");
+    items = [
+      {
+        itemName: finalName,
+        itemDescription: [finalTeam, finalModel, customDescription].filter(Boolean).join(" | "),
+        size,
+        quantity: qty,
+        unitPrice: 0,
+      },
+    ];
 
     if (finalUnitPrice <= 0 && orderTotalInput > 0) {
       finalUnitPrice = orderTotalInput / qty;
@@ -125,13 +202,38 @@ export async function createOrderManual(formData: FormData) {
       : `[Pedido rapido] ${quickDetails}`;
   }
 
-  if (finalUnitPrice <= 0 && orderTotalInput > 0) {
-    finalUnitPrice = orderTotalInput / qty;
+  if (items.length === 0) {
+    throw new Error("Nenhum item valido encontrado para o pedido.");
   }
 
-  let total = orderTotalInput > 0 ? orderTotalInput : finalUnitPrice * qty;
+  const totalQuantity = Math.max(
+    1,
+    items.reduce((sum, item) => sum + (item.quantity > 0 ? item.quantity : 1), 0),
+  );
+
+  if (finalUnitPrice <= 0 && orderTotalInput > 0) {
+    finalUnitPrice = orderTotalInput / totalQuantity;
+  }
+
+  const distributedUnitPrice =
+    orderTotalInput > 0 ? orderTotalInput / totalQuantity : finalUnitPrice;
+  const itemsWithPrice = items.map((item) => ({
+    ...item,
+    quantity: item.quantity > 0 ? item.quantity : 1,
+    unitPrice: distributedUnitPrice,
+    totalPrice: distributedUnitPrice * (item.quantity > 0 ? item.quantity : 1),
+  }));
+
+  let total =
+    orderTotalInput > 0
+      ? orderTotalInput
+      : itemsWithPrice.reduce((sum, item) => sum + item.totalPrice, 0);
   if (isPersonalUse && orderTotalInput <= 0) {
     finalUnitPrice = 0;
+    for (const item of itemsWithPrice) {
+      item.unitPrice = 0;
+      item.totalPrice = 0;
+    }
     total = 0;
   }
 
@@ -175,12 +277,7 @@ export async function createOrderManual(formData: FormData) {
   }
 
   const { orderId } = await createOrder({
-    productId,
-    itemName,
-    itemDescription,
-    size,
-    quantity: qty,
-    unitPrice: finalUnitPrice,
+    items: itemsWithPrice,
     total,
     paymentType,
     amountPaid,
@@ -199,7 +296,7 @@ export async function createOrderManual(formData: FormData) {
 
   let packageIdToLink: string | null = null;
   if (packageMode === "new") {
-    const packageQuantity = Math.max(1, Math.round(packageQuantityInput || qty));
+    const packageQuantity = Math.max(1, Math.round(packageQuantityInput || totalQuantity));
     packageIdToLink = await upsertImportPackage({
       supplierId: supplierId || null,
       packageQuantity,
