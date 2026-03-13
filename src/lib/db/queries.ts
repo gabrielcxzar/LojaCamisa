@@ -1029,81 +1029,90 @@ export async function upsertSupplierOrder(data: {
   totalCost: number;
   paidAt?: string | null;
 }) {
-  const existing = await db
-    .prepare<{ id: string }>("SELECT id FROM supplier_orders WHERE order_id = ?")
-    .get(data.orderId);
-  const nowIso = now();
-
-  if (existing) {
+  const tx = db.transaction(async () => {
+    // Serialize writes per order to avoid duplicate payment rows on concurrent submits.
     await db
-      .prepare(
-        "UPDATE supplier_orders SET supplier_id = ?, product_cost = ?, extra_fees = ?, package_quantity = ?, unit_cost = ?, total_cost = ?, paid_at = ?, updated_at = ? WHERE order_id = ?",
-      )
-      .run(
-        data.supplierId,
-        data.productCost,
-        data.extraFees,
-        data.packageQuantity,
-        data.unitCost,
-        data.totalCost,
-        data.paidAt ?? null,
-        nowIso,
-        data.orderId,
-      );
-  } else {
-    await db
-      .prepare(
-        "INSERT INTO supplier_orders (id, order_id, supplier_id, product_cost, extra_fees, package_quantity, unit_cost, total_cost, paid_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(
-        randomUUID(),
-        data.orderId,
-        data.supplierId,
-        data.productCost,
-        data.extraFees,
-        data.packageQuantity,
-        data.unitCost,
-        data.totalCost,
-        data.paidAt ?? null,
-        nowIso,
-        nowIso,
-      );
-  }
+      .prepare("SELECT pg_advisory_xact_lock(hashtext(?))")
+      .run(data.orderId);
 
-  if (data.paidAt && data.totalCost > 0) {
-    const exists = await db
-      .prepare<{ id: string }>(
-        "SELECT id FROM payments WHERE order_id = ? AND direction = ? AND method = ? LIMIT 1",
-      )
-      .get(data.orderId, "OUTGOING", "Fornecedor");
-    if (!exists) {
+    const existing = await db
+      .prepare<{ id: string }>("SELECT id FROM supplier_orders WHERE order_id = ?")
+      .get(data.orderId);
+    const nowIso = now();
+
+    if (existing) {
       await db
         .prepare(
-          "INSERT INTO payments (id, order_id, direction, amount, method, paid_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "UPDATE supplier_orders SET supplier_id = ?, product_cost = ?, extra_fees = ?, package_quantity = ?, unit_cost = ?, total_cost = ?, paid_at = ?, updated_at = ? WHERE order_id = ?",
         )
         .run(
-          randomUUID(),
-          data.orderId,
-          "OUTGOING",
+          data.supplierId,
+          data.productCost,
+          data.extraFees,
+          data.packageQuantity,
+          data.unitCost,
           data.totalCost,
-          "Fornecedor",
-          data.paidAt,
+          data.paidAt ?? null,
           nowIso,
+          data.orderId,
         );
     } else {
       await db
         .prepare(
-          "UPDATE payments SET amount = ?, paid_at = ?, created_at = ? WHERE id = ?",
+          "INSERT INTO supplier_orders (id, order_id, supplier_id, product_cost, extra_fees, package_quantity, unit_cost, total_cost, paid_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .run(data.totalCost, data.paidAt, nowIso, exists.id);
+        .run(
+          randomUUID(),
+          data.orderId,
+          data.supplierId,
+          data.productCost,
+          data.extraFees,
+          data.packageQuantity,
+          data.unitCost,
+          data.totalCost,
+          data.paidAt ?? null,
+          nowIso,
+          nowIso,
+        );
     }
-  } else {
-    await db
-      .prepare(
-        "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
-      )
-      .run(data.orderId, "OUTGOING", "Fornecedor");
-  }
+
+    if (data.paidAt && data.totalCost > 0) {
+      const exists = await db
+        .prepare<{ id: string }>(
+          "SELECT id FROM payments WHERE order_id = ? AND direction = ? AND method = ? LIMIT 1",
+        )
+        .get(data.orderId, "OUTGOING", "Fornecedor");
+      if (!exists) {
+        await db
+          .prepare(
+            "INSERT INTO payments (id, order_id, direction, amount, method, paid_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            randomUUID(),
+            data.orderId,
+            "OUTGOING",
+            data.totalCost,
+            "Fornecedor",
+            data.paidAt,
+            nowIso,
+          );
+      } else {
+        await db
+          .prepare(
+            "UPDATE payments SET amount = ?, paid_at = ?, created_at = ? WHERE id = ?",
+          )
+          .run(data.totalCost, data.paidAt, nowIso, exists.id);
+      }
+    } else {
+      await db
+        .prepare(
+          "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
+        )
+        .run(data.orderId, "OUTGOING", "Fornecedor");
+    }
+  });
+
+  await tx();
 }
 
 export async function recalculateImportPackageAllocations(packageId: string) {

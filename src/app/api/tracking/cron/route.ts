@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
+import { timingSafeEqual } from "node:crypto";
 
 import { authOptions } from "@/lib/auth";
 import {
@@ -14,6 +15,7 @@ import {
   mapTrackingStatusToOrderStatus,
   shouldAdvanceOrderStatus,
 } from "@/lib/tracking/status-map";
+import { consumeRateLimit, getClientIp } from "@/lib/security/rate-limit";
 
 function toPositiveInt(input: string | undefined, fallback: number) {
   const value = Number(input);
@@ -35,9 +37,15 @@ async function resolveActorEmail(request: Request) {
   const bearerToken = authHeader.startsWith("Bearer ")
     ? authHeader.slice("Bearer ".length).trim()
     : "";
-  const queryToken = new URL(request.url).searchParams.get("secret") ?? "";
+  const isSameLength = bearerToken.length === configuredSecret.length;
+  const tokenMatch =
+    isSameLength &&
+    timingSafeEqual(
+      Buffer.from(bearerToken, "utf8"),
+      Buffer.from(configuredSecret, "utf8"),
+    );
 
-  if (bearerToken === configuredSecret || queryToken === configuredSecret) {
+  if (tokenMatch) {
     return "cron@system";
   }
 
@@ -48,6 +56,25 @@ async function run(request: Request) {
   const actorEmail = await resolveActorEmail(request);
   if (!actorEmail) {
     return NextResponse.json({ error: "Acesso negado" }, { status: 401 });
+  }
+  const ip = getClientIp(request);
+  const rateWindowMs = toPositiveInt(process.env.TRACKING_CRON_RATE_WINDOW_MS, 60_000);
+  const rateMax = toPositiveInt(process.env.TRACKING_CRON_RATE_MAX, 5);
+  const rate = await consumeRateLimit({
+    key: `tracking-cron:${actorEmail}:${ip}`,
+    windowMs: rateWindowMs,
+    max: rateMax,
+  });
+  if (!rate.allowed) {
+    return NextResponse.json(
+      { error: "Limite de requisicoes excedido." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(Math.max(1, Math.ceil((rate.resetAt - Date.now()) / 1000))),
+        },
+      },
+    );
   }
 
   const refreshIntervalHours = toPositiveInt(

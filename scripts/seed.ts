@@ -16,9 +16,23 @@ async function main() {
   const adminEmail = (process.env.ADMIN_EMAIL ?? "admin@lojacamisa.com")
     .toLowerCase()
     .trim();
-  const adminPassword = process.env.ADMIN_PASSWORD ?? "admin123";
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "";
 
-  const passwordHash = await bcrypt.hash(adminPassword, 10);
+  if (process.env.NODE_ENV === "production") {
+    if (!adminPassword) {
+      throw new Error("ADMIN_PASSWORD obrigatoria em producao.");
+    }
+    if (adminPassword.length < 12) {
+      throw new Error("ADMIN_PASSWORD deve ter no minimo 12 caracteres em producao.");
+    }
+    if (adminPassword.toLowerCase() === "admin123") {
+      throw new Error("ADMIN_PASSWORD insegura em producao.");
+    }
+  }
+
+  const effectivePassword = adminPassword || "admin123";
+
+  const passwordHash = await bcrypt.hash(effectivePassword, 10);
   await ensureAdminUser({ name: adminName, email: adminEmail, passwordHash });
 
   await ensureSupplier({ name: "Fornecedor Tailandia", country: "Tailandia" });

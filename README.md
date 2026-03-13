@@ -59,7 +59,7 @@ npm run dev
 - A cada execucao, o sistema atualiza rastreios ativos (`AWAITING_SUPPLIER`, `PREPARING`, `SHIPPED`) e marca como `DELIVERED` quando detecta entrega.
 - Para testar manualmente em desenvolvimento:
 ```powershell
-Invoke-RestMethod -Method GET -Uri "http://localhost:3000/api/tracking/cron?secret=SEU_SEGREDO"
+Invoke-RestMethod -Method GET -Uri "http://localhost:3000/api/tracking/cron" -Headers @{ Authorization = "Bearer SEU_SEGREDO" }
 ```
 
 ## Rotas principais
@@ -76,7 +76,13 @@ Invoke-RestMethod -Method GET -Uri "http://localhost:3000/api/tracking/cron?secr
 - `ADMIN_NAME`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`: admin inicial
 - `TRACKING_PROVIDER`: `17track`
 - `TRACKING_17TRACK_KEY`: chave da API de rastreio
+- REDIS_URL: conexao Redis para rate limit distribuido
 - `CRON_SECRET`: segredo padrao de autenticação de cron na Vercel
 - `TRACKING_CRON_SECRET`: segredo para proteger o endpoint de cron
 - `TRACKING_AUTO_REFRESH_HOURS`: intervalo minimo para reconsultar rastreios
 - `TRACKING_AUTO_REFRESH_BATCH`: maximo de pedidos por rodada do cron
+- `TRACKING_CRON_RATE_WINDOW_MS`: janela de rate limit do endpoint cron (padrao: 60000)
+- `TRACKING_CRON_RATE_MAX`: maximo de chamadas por janela no cron (padrao: 5)
+- `TRACKING_REFRESH_RATE_WINDOW_MS`: janela de rate limit do endpoint refresh (padrao: 60000)
+- `TRACKING_REFRESH_RATE_MAX`: maximo de chamadas por janela no refresh (padrao: 20)
+
