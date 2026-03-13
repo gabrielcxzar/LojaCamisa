@@ -89,8 +89,9 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
   const pending = totalAmount - incoming;
   const profit = totalAmount - totalCost;
   const margin = totalAmount ? (profit / totalAmount) * 100 : 0;
-  const displayedProfit = order.is_personal_use === 1 ? 0 : profit;
-  const displayedMargin = order.is_personal_use === 1 ? 0 : margin;
+  const noRevenueMode = order.is_personal_use === 1 || order.is_stock_order === 1;
+  const displayedProfit = noRevenueMode ? 0 : profit;
+  const displayedMargin = noRevenueMode ? 0 : margin;
   const lastUpdate = shipment?.last_update_at ?? order.updated_at;
   const currentTimeMs = Date.parse(new Date().toISOString());
   const daysStalled = lastUpdate
@@ -143,6 +144,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
         <div className="flex items-center gap-2">
           <Badge tone="accent">{statusLabel[order.status]}</Badge>
           {order.is_personal_use === 1 && <Badge tone="muted">Uso pessoal</Badge>}
+          {order.is_stock_order === 1 && <Badge tone="muted">Estoque</Badge>}
         </div>
         <h1 className="text-2xl font-semibold">
           Pedido {order.code} • {customer.name}
@@ -194,7 +196,13 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
               </div>
               <div className="flex justify-between text-neutral-500">
                 <span>Tipo de pedido</span>
-                <span>{order.is_personal_use === 1 ? "Uso pessoal" : "Comercial"}</span>
+                <span>
+                  {order.is_personal_use === 1
+                    ? "Uso pessoal"
+                    : order.is_stock_order === 1
+                      ? "Estoque"
+                      : "Comercial"}
+                </span>
               </div>
               {order.notes && (
                 <div className="text-neutral-500">
@@ -392,6 +400,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
               orderQuantity={orderQuantity}
               totalSold={totalAmount}
               isPersonalUse={order.is_personal_use === 1}
+              isStockOrder={order.is_stock_order === 1}
               packageInfo={
                 importPackage
                   ? {

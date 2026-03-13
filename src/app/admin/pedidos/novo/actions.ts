@@ -45,7 +45,10 @@ export async function createOrderManual(formData: FormData) {
   const amountPaidSource = String(formData.get("amountPaidSource") ?? "").trim();
   const afterSubmit = String(formData.get("afterSubmit") ?? "open").trim();
   const notes = String(formData.get("notes") ?? "").trim();
-  const isPersonalUse = formData.get("isPersonalUse") ? 1 : 0;
+  const isPersonalUseRaw = formData.get("isPersonalUse") ? 1 : 0;
+  const isStockOrderRaw = formData.get("isStockOrder") ? 1 : 0;
+  const isPersonalUse = isPersonalUseRaw;
+  const isStockOrder = isPersonalUseRaw ? 0 : isStockOrderRaw;
 
   const packageMode = String(formData.get("packageMode") ?? "new").trim();
   const existingPackageId = String(formData.get("existingPackageId") ?? "").trim();
@@ -239,10 +242,10 @@ export async function createOrderManual(formData: FormData) {
     total = 0;
   }
 
-  if (!isPersonalUse && finalUnitPrice <= 0) {
+  if (!isPersonalUse && !isStockOrder && finalUnitPrice <= 0) {
     throw new Error("Informe o valor vendido total para calcular o pedido.");
   }
-  if (!isPersonalUse && total <= 0) {
+  if (!isPersonalUse && !isStockOrder && total <= 0) {
     throw new Error("Valor vendido invalido.");
   }
 
@@ -266,12 +269,18 @@ export async function createOrderManual(formData: FormData) {
 
   let amountPaid =
     paymentType === "FULL" ? total : paymentType === "DEPOSIT_50" ? total * 0.5 : 0;
+  if (isStockOrder) {
+    amountPaid = 0;
+  }
   if (amountPaidSource === "percent" && amountPaidPercentInput >= 0) {
     amountPaid = total * (amountPaidPercentInput / 100);
   } else if (amountPaidInput >= 0) {
     amountPaid = amountPaidInput;
   } else if (amountPaidPercentInput >= 0) {
     amountPaid = total * (amountPaidPercentInput / 100);
+  }
+  if (isStockOrder) {
+    amountPaid = 0;
   }
 
   if (amountPaid < 0) {
@@ -281,9 +290,10 @@ export async function createOrderManual(formData: FormData) {
   const { orderId } = await createOrder({
     items: itemsWithPrice,
     total,
-    paymentType,
+    paymentType: isStockOrder ? "NONE" : paymentType,
     amountPaid,
     isPersonalUse,
+    isStockOrder,
     notes: finalNotes,
     customer: { name, email, phone: phone || null },
     address: {

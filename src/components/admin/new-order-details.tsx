@@ -85,6 +85,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
   const [amountPaidInput, setAmountPaidInput] = useState("");
   const [syncSource, setSyncSource] = useState<"percent" | "amount">("percent");
   const [isPersonalUse, setIsPersonalUse] = useState(false);
+  const [isStockOrder, setIsStockOrder] = useState(false);
 
   const [packageMode, setPackageMode] = useState<"new" | "existing" | "none">(
     "new",
@@ -513,7 +514,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
             Valor medio por camisa:{" "}
             <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
           </p>
-          {!isPersonalUse ? (
+          {!isPersonalUse && !isStockOrder ? (
             <>
               <select
                 name="paymentType"
@@ -550,7 +551,9 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
               <input type="hidden" name="amountPaidPercent" value="0" />
               <input type="hidden" name="amountPaid" value="0" />
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-                Uso pessoal ativo: pedido fica fora de faturamento e lucro.
+                {isPersonalUse
+                  ? "Uso pessoal ativo: pedido fica fora de faturamento e lucro."
+                  : "Pedido para estoque: sem venda registrada no momento."}
               </p>
             </>
           )}
@@ -564,9 +567,26 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
               name="isPersonalUse"
               type="checkbox"
               checked={isPersonalUse}
-              onChange={(event) => setIsPersonalUse(event.target.checked)}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setIsPersonalUse(checked);
+                if (checked) setIsStockOrder(false);
+              }}
             />
             Uso pessoal (nao entra em faturamento e lucro)
+          </label>
+          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+            <input
+              name="isStockOrder"
+              type="checkbox"
+              checked={isStockOrder}
+              onChange={(event) => {
+                const checked = event.target.checked;
+                setIsStockOrder(checked);
+                if (checked) setIsPersonalUse(false);
+              }}
+            />
+            Pedido para estoque (sem venda ao cliente)
           </label>
         </div>
       </section>

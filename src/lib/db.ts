@@ -134,6 +134,7 @@ const schemaSql = `
     total_amount DOUBLE PRECISION NOT NULL,
     amount_paid DOUBLE PRECISION NOT NULL,
     is_personal_use INTEGER NOT NULL DEFAULT 0,
+    is_stock_order INTEGER NOT NULL DEFAULT 0,
     currency TEXT NOT NULL,
     notes TEXT,
     created_at TEXT NOT NULL,
@@ -144,6 +145,8 @@ const schemaSql = `
 
   ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS is_personal_use INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE orders
+    ADD COLUMN IF NOT EXISTS is_stock_order INTEGER NOT NULL DEFAULT 0;
 
   CREATE TABLE IF NOT EXISTS order_items (
     id TEXT PRIMARY KEY,

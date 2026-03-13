@@ -25,6 +25,7 @@ type SupplierCostFormProps = {
   orderQuantity: number;
   totalSold: number;
   isPersonalUse: boolean;
+  isStockOrder: boolean;
   packageInfo?: {
     code: string;
     linkedOrders: number;
@@ -49,6 +50,7 @@ export function SupplierCostForm({
   orderQuantity,
   totalSold,
   isPersonalUse,
+  isStockOrder,
   packageInfo,
   suppliers,
   initial,
@@ -72,6 +74,7 @@ export function SupplierCostForm({
 
   const [totalSoldInput, setTotalSoldInput] = useState(toMoney(totalSold));
   const [personalUseChecked, setPersonalUseChecked] = useState(isPersonalUse);
+  const [stockOrderChecked, setStockOrderChecked] = useState(isStockOrder);
   const [packageQuantityInput, setPackageQuantityInput] = useState(defaultPackageQuantity);
   const [productCostInput, setProductCostInput] = useState(defaultProductCost);
   const [extraFeesInput, setExtraFeesInput] = useState(defaultExtraFees);
@@ -91,8 +94,9 @@ export function SupplierCostForm({
     const packageFinalCost = productCost + extraFees;
     const averageUnitCost = packageFinalCost / packageQuantity;
     const totalOrderCost = averageUnitCost * Math.max(1, orderQuantity);
-    const estimatedProfit = personalUseChecked ? 0 : sold - totalOrderCost;
-    const margin = !personalUseChecked && sold > 0 ? (estimatedProfit / sold) * 100 : 0;
+    const noRevenueMode = personalUseChecked || stockOrderChecked;
+    const estimatedProfit = noRevenueMode ? 0 : sold - totalOrderCost;
+    const margin = !noRevenueMode && sold > 0 ? (estimatedProfit / sold) * 100 : 0;
 
     return {
       sold,
@@ -109,6 +113,7 @@ export function SupplierCostForm({
     packageInfo?.totalQuantity,
     packageQuantityInput,
     personalUseChecked,
+    stockOrderChecked,
     productCostInput,
     totalSoldInput,
   ]);
@@ -133,9 +138,26 @@ export function SupplierCostForm({
           name="isPersonalUse"
           type="checkbox"
           checked={personalUseChecked}
-          onChange={(event) => setPersonalUseChecked(event.target.checked)}
+          onChange={(event) => {
+            const checked = event.target.checked;
+            setPersonalUseChecked(checked);
+            if (checked) setStockOrderChecked(false);
+          }}
         />
         Uso pessoal (nao entra no faturamento/lucro)
+      </label>
+      <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700">
+        <input
+          name="isStockOrder"
+          type="checkbox"
+          checked={stockOrderChecked}
+          onChange={(event) => {
+            const checked = event.target.checked;
+            setStockOrderChecked(checked);
+            if (checked) setPersonalUseChecked(false);
+          }}
+        />
+        Pedido para estoque (sem venda ao cliente)
       </label>
       {suppliers.length > 0 ? (
         <select
@@ -197,7 +219,7 @@ export function SupplierCostForm({
         <p>Custo alocado neste pedido: R$ {toMoney(summary.totalOrderCost)}</p>
         <p>
           Lucro estimado do pedido: R$ {toMoney(summary.estimatedProfit)}
-          {personalUseChecked ? " (uso pessoal)" : ""}
+          {personalUseChecked ? " (uso pessoal)" : stockOrderChecked ? " (estoque)" : ""}
         </p>
         <p>Margem estimada: {summary.margin.toFixed(1)}%</p>
         <p className="pt-1">

@@ -37,6 +37,7 @@ export type OrderRow = {
   total_amount: number;
   amount_paid: number;
   is_personal_use: number;
+  is_stock_order: number;
   currency: string;
   notes: string | null;
   created_at: string;
@@ -492,6 +493,7 @@ export async function upsertImportPackage(data: {
   notes?: string | null;
 }) {
   const nowIso = now();
+  const safePackageQuantity = Math.max(1, Math.round(Number(data.packageQuantity) || 1));
   const packageId = data.packageId ?? randomUUID();
   const packageCode = `PK-${packageId.slice(0, 8).toUpperCase()}`;
 
@@ -521,7 +523,7 @@ export async function upsertImportPackage(data: {
       )
       .run(
         data.supplierId ?? null,
-        data.packageQuantity,
+        safePackageQuantity,
         data.productCost,
         data.extraFees,
         data.internalShipping ?? 0,
@@ -550,7 +552,7 @@ export async function upsertImportPackage(data: {
       packageId,
       packageCode,
       data.supplierId ?? null,
-      data.packageQuantity,
+      safePackageQuantity,
       data.productCost,
       data.extraFees,
       data.internalShipping ?? 0,
@@ -659,6 +661,7 @@ export async function createOrder(data: {
   paymentType: string;
   amountPaid: number;
   isPersonalUse?: number;
+  isStockOrder?: number;
   status?: string;
   notes?: string | null;
   customer: {
@@ -754,7 +757,7 @@ export async function createOrder(data: {
 
     await db
       .prepare(
-        "INSERT INTO orders (id, code, customer_id, address_id, status, payment_type, total_amount, amount_paid, is_personal_use, currency, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO orders (id, code, customer_id, address_id, status, payment_type, total_amount, amount_paid, is_personal_use, is_stock_order, currency, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         orderId,
@@ -766,6 +769,7 @@ export async function createOrder(data: {
         data.total,
         data.amountPaid,
         data.isPersonalUse ?? 0,
+        data.isStockOrder ?? 0,
         "BRL",
         data.notes ?? null,
         nowIso,
@@ -822,6 +826,7 @@ export async function updateOrderSaleData(data: {
   orderId: string;
   totalAmount: number;
   isPersonalUse: number;
+  isStockOrder: number;
 }) {
   const quantityRow = await db
     .prepare<{ quantity: number }>(
@@ -839,9 +844,9 @@ export async function updateOrderSaleData(data: {
 
   await db
     .prepare(
-      "UPDATE orders SET total_amount = ?, is_personal_use = ?, updated_at = ? WHERE id = ?",
+      "UPDATE orders SET total_amount = ?, is_personal_use = ?, is_stock_order = ?, updated_at = ? WHERE id = ?",
     )
-    .run(data.totalAmount, data.isPersonalUse, nowIso, data.orderId);
+    .run(data.totalAmount, data.isPersonalUse, data.isStockOrder, nowIso, data.orderId);
 
   await db
     .prepare(
@@ -1035,6 +1040,7 @@ export async function upsertSupplierOrder(data: {
       .prepare("SELECT pg_advisory_xact_lock(hashtext(?))")
       .run(data.orderId);
 
+    const safePackageQuantity = Math.max(1, Math.round(Number(data.packageQuantity) || 1));
     const existing = await db
       .prepare<{ id: string }>("SELECT id FROM supplier_orders WHERE order_id = ?")
       .get(data.orderId);
@@ -1049,7 +1055,7 @@ export async function upsertSupplierOrder(data: {
           data.supplierId,
           data.productCost,
           data.extraFees,
-          data.packageQuantity,
+          safePackageQuantity,
           data.unitCost,
           data.totalCost,
           data.paidAt ?? null,
@@ -1067,7 +1073,7 @@ export async function upsertSupplierOrder(data: {
           data.supplierId,
           data.productCost,
           data.extraFees,
-          data.packageQuantity,
+          safePackageQuantity,
           data.unitCost,
           data.totalCost,
           data.paidAt ?? null,

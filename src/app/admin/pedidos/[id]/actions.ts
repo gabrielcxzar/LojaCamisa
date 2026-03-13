@@ -64,7 +64,10 @@ export async function updateSupplierInfo(formData: FormData) {
   const orderId = String(formData.get("orderId") ?? "");
   const supplierId = String(formData.get("supplierId") ?? "");
   const totalSold = parseNumber(formData.get("totalSold"), 0);
-  const isPersonalUse = formData.get("isPersonalUse") ? 1 : 0;
+  const isPersonalUseRaw = formData.get("isPersonalUse") ? 1 : 0;
+  const isStockOrderRaw = formData.get("isStockOrder") ? 1 : 0;
+  const isPersonalUse = isPersonalUseRaw;
+  const isStockOrder = isPersonalUseRaw ? 0 : isStockOrderRaw;
   const legacyUnitCost = parseNumber(formData.get("unitCost"), 0);
   const legacyTotalCost = parseNumber(formData.get("totalCost"), 0);
   const packageQuantityInput = parseNumber(formData.get("packageQuantity"), 0);
@@ -85,7 +88,7 @@ export async function updateSupplierInfo(formData: FormData) {
     ) {
       throw new Error("Valores financeiros invalidos.");
     }
-    if (!isPersonalUse && totalSold <= 0) {
+    if (!isPersonalUse && !isStockOrder && totalSold <= 0) {
       throw new Error("Informe o valor vendido total do pedido.");
     }
     if (!isPersonalUse && productCostInput <= 0) {
@@ -96,6 +99,7 @@ export async function updateSupplierInfo(formData: FormData) {
       orderId,
       totalAmount: totalSold,
       isPersonalUse,
+      isStockOrder,
     });
 
     const linkedImportPackage = await getImportPackageByOrderId(orderId);
@@ -280,6 +284,7 @@ export async function updateSupplierInfo(formData: FormData) {
       orderId,
       supplierId,
       isPersonalUse,
+      isStockOrder,
       totalSold,
       message,
     });
@@ -380,6 +385,7 @@ export async function duplicateOrderAction(formData: FormData) {
     paymentType: order.payment_type,
     amountPaid: 0,
     isPersonalUse: order.is_personal_use,
+    isStockOrder: order.is_stock_order,
     notes: order.notes
       ? `[Duplicado de ${order.code}]\n${order.notes}`
       : `[Duplicado de ${order.code}]`,
