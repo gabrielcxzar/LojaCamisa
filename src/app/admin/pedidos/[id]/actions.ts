@@ -7,6 +7,7 @@ import {
   deleteOrder,
   getOrderDetail,
   getImportPackageByOrderId,
+  getLinkedOrdersForImportPackage,
   logAction,
   recalculateImportPackageAllocations,
   updateOrderSaleData,
@@ -103,7 +104,16 @@ export async function updateSupplierInfo(formData: FormData) {
         throw new Error("Selecione um fornecedor para pedido comercial.");
       }
 
-      const packageQuantity = Math.max(1, Math.round(packageQuantityInput || Number(linkedImportPackage.package_quantity) || 1));
+      const linkedOrders = await getLinkedOrdersForImportPackage(linkedImportPackage.id);
+      const linkedTotalQuantity = linkedOrders.reduce(
+        (sum, item) => sum + Math.max(0, Number(item.quantity) || 0),
+        0,
+      );
+      const packageQuantity = Math.max(
+        linkedTotalQuantity,
+        Math.round(packageQuantityInput || Number(linkedImportPackage.package_quantity) || 1),
+        1,
+      );
       await upsertImportPackage({
         packageId: linkedImportPackage.id,
         supplierId: supplierId || linkedImportPackage.supplier_id || null,

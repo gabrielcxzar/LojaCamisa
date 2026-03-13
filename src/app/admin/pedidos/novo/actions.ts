@@ -97,11 +97,9 @@ export async function createOrderManual(formData: FormData) {
       model,
       description,
       size: itemSize,
-      quantity: itemQty > 0 ? itemQty : 1,
+      quantity: itemQty > 0 ? itemQty : 0,
     };
-  }).filter((item, index) =>
-    index === 0 || Boolean(item.team || item.model || item.description),
-  );
+  }).filter((item) => item.quantity > 0 && Boolean(item.team || item.model || item.description));
   const isQuickMultiItem = entryMode === "quick" && quickItems.length > 0;
 
   if (!name || !line1 || !city || !state || (!isQuickMultiItem && !size)) {
@@ -207,9 +205,13 @@ export async function createOrderManual(formData: FormData) {
   }
 
   const totalQuantity = Math.max(
-    1,
-    items.reduce((sum, item) => sum + (item.quantity > 0 ? item.quantity : 1), 0),
+    0,
+    items.reduce((sum, item) => sum + (item.quantity > 0 ? item.quantity : 0), 0),
   );
+
+  if (totalQuantity <= 0) {
+    throw new Error("Informe pelo menos uma camisa com quantidade valida.");
+  }
 
   if (finalUnitPrice <= 0 && orderTotalInput > 0) {
     finalUnitPrice = orderTotalInput / totalQuantity;

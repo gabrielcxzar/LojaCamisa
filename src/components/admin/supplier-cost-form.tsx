@@ -28,6 +28,7 @@ type SupplierCostFormProps = {
   packageInfo?: {
     code: string;
     linkedOrders: number;
+    totalQuantity: number;
   } | null;
   suppliers: SupplierOption[];
   initial?: SupplierCostInitialValues;
@@ -53,9 +54,13 @@ export function SupplierCostForm({
   initial,
 }: SupplierCostFormProps) {
   const defaultPackageQuantity =
-    initial?.packageQuantity && initial.packageQuantity > 0
-      ? String(initial.packageQuantity)
-      : String(orderQuantity > 0 ? orderQuantity : 1);
+    String(
+      Math.max(
+        packageInfo?.totalQuantity ?? 0,
+        initial?.packageQuantity ?? 0,
+        orderQuantity > 0 ? orderQuantity : 1,
+      ),
+    );
   const defaultProductCost =
     initial?.productCost && initial.productCost > 0
       ? toMoney(initial.productCost)
@@ -73,14 +78,21 @@ export function SupplierCostForm({
 
   const summary = useMemo(() => {
     const sold = Math.max(0, toNumber(totalSoldInput));
-    const packageQuantity = Math.max(1, Math.round(toNumber(packageQuantityInput)));
+    const minimumPackageQuantity = Math.max(
+      packageInfo?.totalQuantity ?? 0,
+      orderQuantity > 0 ? orderQuantity : 1,
+    );
+    const packageQuantity = Math.max(
+      minimumPackageQuantity,
+      Math.round(toNumber(packageQuantityInput)),
+    );
     const productCost = Math.max(0, toNumber(productCostInput));
     const extraFees = Math.max(0, toNumber(extraFeesInput));
     const packageFinalCost = productCost + extraFees;
     const averageUnitCost = packageFinalCost / packageQuantity;
     const totalOrderCost = averageUnitCost * Math.max(1, orderQuantity);
-    const estimatedProfit = sold - totalOrderCost;
-    const margin = sold > 0 ? (estimatedProfit / sold) * 100 : 0;
+    const estimatedProfit = personalUseChecked ? 0 : sold - totalOrderCost;
+    const margin = !personalUseChecked && sold > 0 ? (estimatedProfit / sold) * 100 : 0;
 
     return {
       sold,
@@ -91,7 +103,15 @@ export function SupplierCostForm({
       estimatedProfit,
       margin,
     };
-  }, [extraFeesInput, orderQuantity, packageQuantityInput, productCostInput, totalSoldInput]);
+  }, [
+    extraFeesInput,
+    orderQuantity,
+    packageInfo?.totalQuantity,
+    packageQuantityInput,
+    personalUseChecked,
+    productCostInput,
+    totalSoldInput,
+  ]);
 
   return (
     <form action={action} className="mt-4 space-y-3">
@@ -171,10 +191,14 @@ export function SupplierCostForm({
             Pacote {packageInfo.code}: {packageInfo.linkedOrders} pedido(s) vinculado(s)
           </p>
         )}
+        {packageInfo && <p>Qtd total do pacote: {summary.packageQuantity} camisa(s)</p>}
         <p>Custo final do pacote: R$ {toMoney(summary.packageFinalCost)}</p>
         <p>Custo medio por camisa: R$ {toMoney(summary.averageUnitCost)}</p>
         <p>Custo alocado neste pedido: R$ {toMoney(summary.totalOrderCost)}</p>
-        <p>Lucro estimado do pedido: R$ {toMoney(summary.estimatedProfit)}</p>
+        <p>
+          Lucro estimado do pedido: R$ {toMoney(summary.estimatedProfit)}
+          {personalUseChecked ? " (uso pessoal)" : ""}
+        </p>
         <p>Margem estimada: {summary.margin.toFixed(1)}%</p>
         <p className="pt-1">
           Pedido comercial exige valor pago ao fornecedor.

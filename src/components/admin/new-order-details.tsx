@@ -34,8 +34,7 @@ type QuickItemInput = {
   team: string;
   model: string;
   description: string;
-  size: string;
-  quantity: string;
+  sizeQuantities: Record<string, string>;
 };
 
 function parseNumber(value: string) {
@@ -70,8 +69,13 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
       team: "",
       model: "",
       description: "",
-      size: "M",
-      quantity: "1",
+      sizeQuantities: {
+        PP: "",
+        P: "",
+        M: "1",
+        G: "",
+        GG: "",
+      },
     },
   ]);
   const [nextQuickItemId, setNextQuickItemId] = useState(2);
@@ -104,15 +108,29 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
   const quantityValue = useMemo(() => {
     if (entryMode === "quick") {
       const total = quickItems.reduce((sum, item) => {
-        const qty = parseNumber(item.quantity);
-        return sum + (qty > 0 ? qty : 1);
+        const itemTotal = SHIRT_SIZES.reduce((itemSum, shirtSize) => {
+          const qty = parseNumber(item.sizeQuantities[shirtSize] ?? "");
+          return itemSum + (qty > 0 ? qty : 0);
+        }, 0);
+        return sum + itemTotal;
       }, 0);
-      return total > 0 ? total : 1;
+      return total;
     }
 
     const qty = parseNumber(quantity);
     return qty > 0 ? qty : 1;
   }, [entryMode, quantity, quickItems]);
+
+  const validQuickModels = useMemo(() => {
+    return quickItems.filter((item) => {
+      const hasDetails = Boolean(item.team || item.model || item.description);
+      const totalBySize = SHIRT_SIZES.reduce((sum, shirtSize) => {
+        const qty = parseNumber(item.sizeQuantities[shirtSize] ?? "");
+        return sum + (qty > 0 ? qty : 0);
+      }, 0);
+      return hasDetails && totalBySize > 0;
+    });
+  }, [quickItems]);
 
   const effectiveUnitPrice = useMemo(() => {
     const totalInput = parseNumber(orderTotalInput);
@@ -203,10 +221,26 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
   function updateQuickItem(
     id: number,
     field: keyof Omit<QuickItemInput, "id">,
-    value: string,
+    value: string | Record<string, string>,
   ) {
     setQuickItems((current) =>
       current.map((item) => (item.id === id ? { ...item, [field]: value } : item)),
+    );
+  }
+
+  function updateQuickItemSize(id: number, size: string, value: string) {
+    setQuickItems((current) =>
+      current.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              sizeQuantities: {
+                ...item.sizeQuantities,
+                [size]: value,
+              },
+            }
+          : item,
+      ),
     );
   }
 
@@ -218,8 +252,13 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
         team: "",
         model: "",
         description: "",
-        size: "M",
-        quantity: "1",
+        sizeQuantities: {
+          PP: "",
+          P: "",
+          M: "1",
+          G: "",
+          GG: "",
+        },
       },
     ]);
     setNextQuickItemId((current) => current + 1);
@@ -291,43 +330,39 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
                   )}
                 </div>
                 <input
-                  name="quickItemTeam"
                   placeholder="Time (ex: Vitoria)"
                   value={item.team}
                   onChange={(event) => updateQuickItem(item.id, "team", event.target.value)}
                   className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
                 />
                 <input
-                  name="quickItemModel"
                   placeholder="Modelo (ex: 2025 torcedor)"
                   value={item.model}
                   onChange={(event) => updateQuickItem(item.id, "model", event.target.value)}
                   className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
                 />
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <select
-                    name="quickItemSize"
-                    value={item.size}
-                    onChange={(event) => updateQuickItem(item.id, "size", event.target.value)}
-                    className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
-                  >
-                    {SHIRT_SIZES.map((shirtSize) => (
-                      <option key={shirtSize} value={shirtSize}>
-                        Tamanho {shirtSize}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    name="quickItemQuantity"
-                    type="number"
-                    min={1}
-                    value={item.quantity}
-                    onChange={(event) => updateQuickItem(item.id, "quantity", event.target.value)}
-                    className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
-                  />
+                <div className="grid gap-3 sm:grid-cols-5">
+                  {SHIRT_SIZES.map((shirtSize) => (
+                    <label
+                      key={shirtSize}
+                      className="rounded-2xl border border-neutral-200 bg-white px-3 py-3 text-sm text-neutral-600"
+                    >
+                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-neutral-500">
+                        {shirtSize}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={item.sizeQuantities[shirtSize] ?? ""}
+                        onChange={(event) =>
+                          updateQuickItemSize(item.id, shirtSize, event.target.value)
+                        }
+                        className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
+                      />
+                    </label>
+                  ))}
                 </div>
                 <input
-                  name="quickItemDescription"
                   placeholder="Descricao curta (opcional)"
                   value={item.description}
                   onChange={(event) =>
@@ -335,6 +370,20 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
                   }
                   className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
                 />
+                {SHIRT_SIZES.map((shirtSize) => {
+                  const itemQuantity = parseNumber(item.sizeQuantities[shirtSize] ?? "");
+                  if (itemQuantity <= 0) return null;
+
+                  return (
+                    <div key={`${item.id}-${shirtSize}`}>
+                      <input type="hidden" name="quickItemTeam" value={item.team} />
+                      <input type="hidden" name="quickItemModel" value={item.model} />
+                      <input type="hidden" name="quickItemDescription" value={item.description} />
+                      <input type="hidden" name="quickItemSize" value={shirtSize} />
+                      <input type="hidden" name="quickItemQuantity" value={String(itemQuantity)} />
+                    </div>
+                  );
+                })}
               </div>
             ))}
             <button
@@ -345,8 +394,8 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
               Adicionar modelo
             </button>
             <p className="text-xs text-neutral-500">
-              Um unico pedido pode conter varios modelos. O sistema salva sem criar produto no
-              catalogo.
+              Um unico pedido pode conter varios modelos, e cada modelo pode ter varios tamanhos
+              com quantidades diferentes. O sistema salva sem criar produto no catalogo.
             </p>
           </div>
         ) : (
@@ -417,6 +466,8 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
               <input type="hidden" name="quantity" value={String(quantityValue)} />
               <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
                 Modelos no pedido: <span className="font-semibold">{quickItems.length}</span>
+                <br />
+                Modelos validos: <span className="font-semibold">{validQuickModels.length}</span>
                 <br />
                 Quantidade total: <span className="font-semibold">{quantityValue} camisa(s)</span>
               </p>
@@ -707,7 +758,13 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <SubmitButton pendingLabel="Criando pedido..." className="w-full" name="afterSubmit" value="open">
+        <SubmitButton
+          pendingLabel="Criando pedido..."
+          className="w-full"
+          name="afterSubmit"
+          value="open"
+          disabled={entryMode === "quick" && quantityValue <= 0}
+        >
           Criar e abrir pedido
         </SubmitButton>
         <SubmitButton
@@ -716,6 +773,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
           variant="outline"
           name="afterSubmit"
           value="new"
+          disabled={entryMode === "quick" && quantityValue <= 0}
         >
           Criar e novo
         </SubmitButton>

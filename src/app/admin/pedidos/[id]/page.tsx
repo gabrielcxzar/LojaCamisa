@@ -62,6 +62,10 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
   const importPackageOrders = importPackage
     ? await listImportPackageOrders(importPackage.id)
     : [];
+  const importPackageTotalQuantity = importPackageOrders.reduce(
+    (sum, linkedOrder) => sum + Number(linkedOrder.quantity ?? 0),
+    0,
+  );
   const stalledDays = stalledSetting ? Number(stalledSetting.value) : 7;
   const orderQuantity = items.reduce((sum, item) => sum + Number(item.quantity), 0);
   const supplierProductCost = supplierOrder?.product_cost ? Number(supplierOrder.product_cost) : 0;
@@ -85,6 +89,8 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
   const pending = totalAmount - incoming;
   const profit = totalAmount - totalCost;
   const margin = totalAmount ? (profit / totalAmount) * 100 : 0;
+  const displayedProfit = order.is_personal_use === 1 ? 0 : profit;
+  const displayedMargin = order.is_personal_use === 1 ? 0 : margin;
   const lastUpdate = shipment?.last_update_at ?? order.updated_at;
   const currentTimeMs = Date.parse(new Date().toISOString());
   const daysStalled = lastUpdate
@@ -216,11 +222,11 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
               </div>
               <div className="flex justify-between font-semibold text-neutral-900">
                 <span>Lucro</span>
-                <span>R$ {profit.toFixed(2)}</span>
+                <span>R$ {displayedProfit.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-neutral-500">
                 <span>Margem</span>
-                <span>{margin.toFixed(1)}%</span>
+                <span>{displayedMargin.toFixed(1)}%</span>
               </div>
             </div>
           </div>
@@ -391,6 +397,11 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                   ? {
                       code: importPackage.code,
                       linkedOrders: Number(importPackage.linked_orders),
+                      totalQuantity: Math.max(
+                        Number(importPackage.package_quantity ?? 0),
+                        importPackageTotalQuantity,
+                        orderQuantity,
+                      ),
                     }
                   : null
               }
