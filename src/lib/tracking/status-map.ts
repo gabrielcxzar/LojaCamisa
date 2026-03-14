@@ -34,6 +34,7 @@ const PREPARING_TERMS = [
 
 const SHIPPED_TERMS = [
   "in transit",
+  "intransit",
   "departed",
   "arrived",
   "processed",
@@ -73,8 +74,16 @@ function containsAny(text: string, terms: string[]) {
   return terms.some((term) => text.includes(term));
 }
 
+function normalizeTrackingText(rawStatus: string) {
+  return rawStatus
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase()
+    .trim();
+}
+
 export function mapTrackingStatusToOrderStatus(rawStatus: string) {
-  const normalized = rawStatus.toLowerCase().trim();
+  const normalized = normalizeTrackingText(rawStatus);
 
   if (!normalized) return null;
   if (containsAny(normalized, DELIVERED_TERMS)) return "DELIVERED";
@@ -87,7 +96,7 @@ export function mapTrackingStatusToOrderStatus(rawStatus: string) {
 
 export function isTrackingTaxPending(rawStatus: string | null | undefined) {
   if (!rawStatus) return false;
-  const normalized = rawStatus.toLowerCase();
+  const normalized = normalizeTrackingText(rawStatus);
   return containsAny(normalized, TAX_PENDING_TERMS);
 }
 
@@ -108,7 +117,7 @@ export function shouldAdvanceOrderStatus(current: string, next: string) {
 
 export function translateTrackingStatus(rawStatus: string | null | undefined) {
   if (!rawStatus) return "Sem atualizacao";
-  const normalized = rawStatus.toLowerCase();
+  const normalized = normalizeTrackingText(rawStatus);
 
   if (containsAny(normalized, DELIVERED_TERMS)) return "Entregue";
   if (containsAny(normalized, PREPARING_TERMS)) return "Aguardando liberacao / taxa";

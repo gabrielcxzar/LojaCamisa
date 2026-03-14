@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import Image from "next/image";
 import { signIn } from "next-auth/react";
+import type { FormEvent } from "react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,11 +13,13 @@ export default function AdminLoginPage() {
   const [phase, setPhase] = useState<"idle" | "authenticating" | "redirecting">("idle");
   const loading = phase !== "idle";
 
-  async function handleSubmit(formData: FormData) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
     if (loading) return;
 
     setError(null);
     setPhase("authenticating");
+    const formData = new FormData(event.currentTarget);
     const email = String(formData.get("email") ?? "");
     const password = String(formData.get("password") ?? "");
 
@@ -30,6 +33,12 @@ export default function AdminLoginPage() {
 
       if (!result) {
         setError("Falha ao entrar. Tente novamente.");
+        setPhase("idle");
+        return;
+      }
+
+      if (!result.ok) {
+        setError("Login recusado. Verifique email e senha.");
         setPhase("idle");
         return;
       }
@@ -51,8 +60,9 @@ export default function AdminLoginPage() {
       }
 
       window.location.assign("/admin");
-    } catch {
-      setError("Erro ao entrar. Tente novamente.");
+    } catch (error) {
+      console.error("Falha de rede no login:", error);
+      setError("Erro de rede ao entrar. Atualize a pagina e tente novamente.");
       setPhase("idle");
     }
   }
@@ -61,7 +71,7 @@ export default function AdminLoginPage() {
     <div className="min-h-screen bg-[color:var(--background)]">
       <div className="mx-auto flex min-h-screen max-w-md items-center px-6">
         <form
-          action={handleSubmit}
+          onSubmit={handleSubmit}
           className={`w-full space-y-6 rounded-3xl border border-neutral-200 bg-white p-8 shadow-sm transition ${
             loading ? "opacity-95" : "opacity-100"
           }`}
