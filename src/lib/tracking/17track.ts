@@ -17,7 +17,11 @@ type TrackInfoResponse = {
     accepted?: Array<{
       track_info?: {
         latest_status?: { status?: string };
-        latest_event?: { time_utc?: string };
+        latest_event?: {
+          time_utc?: string;
+          description?: string;
+          location?: string;
+        };
         time_metrics?: { estimated_delivery_date?: { to?: string } };
       };
     }>;
@@ -90,7 +94,14 @@ export async function fetchTrackingUpdate(
   const info = json.data?.accepted?.[0]?.track_info;
   if (!info) return null;
 
-  const status = info.latest_status?.status ?? "Em trânsito";
+  const rawStatus = info.latest_status?.status ?? "Em trânsito";
+  const eventDescription = info.latest_event?.description;
+  const eventLocation = info.latest_event?.location;
+
+  const status = eventDescription
+    ? `${eventDescription}${eventLocation ? ` (${eventLocation})` : ""}`
+    : rawStatus;
+
   const lastUpdateAt = info.latest_event?.time_utc
     ? new Date(info.latest_event.time_utc)
     : undefined;

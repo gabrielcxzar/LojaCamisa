@@ -16,6 +16,38 @@ function toNumber(value: unknown) {
   return 0;
 }
 
+function toPositiveInteger(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 0;
+  if (!Number.isInteger(parsed)) return 0;
+  return parsed > 0 ? parsed : 0;
+}
+
+function generateOrderCodeCandidate() {
+  const timestampPart = Date.now().toString(36).toUpperCase();
+  const entropyPart = randomUUID().replace(/-/g, "").slice(0, 4).toUpperCase();
+  return `LC-${timestampPart}-${entropyPart}`;
+}
+
+function isOrderCodeUniqueViolation(error: unknown) {
+  const candidate = error as {
+    code?: string;
+    constraint_name?: string;
+    constraint?: string;
+    message?: string;
+  };
+
+  if (candidate?.code !== "23505") return false;
+  const constraintName = (candidate.constraint_name ?? candidate.constraint ?? "").toLowerCase();
+  const message = (candidate.message ?? "").toLowerCase();
+
+  return (
+    constraintName.includes("orders_code") ||
+    message.includes("orders_code_key") ||
+    message.includes("orders.code")
+  );
+}
+
 export type ProductRow = {
   id: string;
   name: string;
@@ -129,6 +161,48 @@ type SupplierOrderRow = {
   unit_cost: number;
   total_cost: number;
   paid_at: string | null;
+};
+
+type InternalStockAllocationRow = {
+  id: string;
+  source_order_id: string;
+  sale_order_id: string;
+  supplier_id: string;
+  quantity: number;
+  unit_cost: number;
+  total_cost: number;
+  created_at: string;
+};
+
+type InternalStockAllocationDetailRow = InternalStockAllocationRow & {
+  source_order_code: string;
+  source_customer_name: string;
+  supplier_name: string;
+};
+
+export type AvailableInternalStockRow = {
+  source_order_id: string;
+  source_order_code: string;
+  source_customer_name: string;
+  created_at: string;
+  supplier_id: string;
+  supplier_name: string;
+  package_code: string | null;
+  total_quantity: number;
+  allocated_quantity: number;
+  available_quantity: number;
+  unit_cost: number;
+};
+
+export type InternalStockAvailabilityRow = {
+  source_order_id: string;
+  source_order_code: string;
+  total_quantity: number;
+  allocated_quantity: number;
+  available_quantity: number;
+  unit_cost: number;
+  supplier_id: string | null;
+  supplier_paid_at: string | null;
 };
 
 type ShipmentRow = {
@@ -454,6 +528,276 @@ export async function getImportPackageByOrderId(orderId: string) {
     .get(orderId);
 }
 
+export async function listAvailableInternalStockOrders(limit = 100) {
+  return db
+    .prepare<AvailableInternalStockRow>(
+      `
+      SELECT
+        o.id as source_order_id,
+        o.code as source_order_code,
+        c.name as source_customer_name,
+        o.created_at,
+        so.supplier_id,
+        s.name as supplier_name,
+        p.code as package_code,
+        COALESCE(item_qty.total_quantity, 0) as total_quantity,
+        COALESCE(alloc_qty.allocated_quantity, 0) as allocated_quantity,
+        GREATEST(
+          COALESCE(item_qty.total_quantity, 0) - COALESCE(alloc_qty.allocated_quantity, 0),
+          0
+        ) as available_quantity,
+        COALESCE(so.unit_cost, 0) as unit_cost
+      FROM orders o
+      JOIN customers c ON c.id = o.customer_id
+      LEFT JOIN supplier_orders so ON so.order_id = o.id
+      LEFT JOIN suppliers s ON s.id = so.supplier_id
+      LEFT JOIN order_packages op ON op.order_id = o.id
+      LEFT JOIN import_packages p ON p.id = op.package_id
+      LEFT JOIN (
+        SELECT order_id, COALESCE(SUM(quantity), 0) as total_quantity
+        FROM order_items
+        GROUP BY order_id
+      ) item_qty ON item_qty.order_id = o.id
+      LEFT JOIN (
+        SELECT source_order_id, COALESCE(SUM(quantity), 0) as allocated_quantity
+        FROM internal_stock_allocations
+        GROUP BY source_order_id
+      ) alloc_qty ON alloc_qty.source_order_id = o.id
+      WHERE o.is_stock_order = 1
+      AND o.is_personal_use = 0
+      AND o.status <> 'CANCELED'
+      AND so.supplier_id IS NOT NULL
+      AND COALESCE(so.unit_cost, 0) > 0
+      AND GREATEST(
+        COALESCE(item_qty.total_quantity, 0) - COALESCE(alloc_qty.allocated_quantity, 0),
+        0
+      ) > 0
+      ORDER BY o.created_at DESC
+      LIMIT ?
+      `,
+    )
+    .all(limit);
+}
+
+export async function getInternalStockAvailabilityBySourceOrderId(sourceOrderId: string) {
+  return db
+    .prepare<InternalStockAvailabilityRow>(
+      `
+      SELECT
+        o.id as source_order_id,
+        o.code as source_order_code,
+        COALESCE(item_qty.total_quantity, 0) as total_quantity,
+        COALESCE(alloc_qty.allocated_quantity, 0) as allocated_quantity,
+        GREATEST(
+          COALESCE(item_qty.total_quantity, 0) - COALESCE(alloc_qty.allocated_quantity, 0),
+          0
+        ) as available_quantity,
+        COALESCE(so.unit_cost, 0) as unit_cost,
+        so.supplier_id,
+        so.paid_at as supplier_paid_at
+      FROM orders o
+      LEFT JOIN supplier_orders so ON so.order_id = o.id
+      LEFT JOIN (
+        SELECT order_id, COALESCE(SUM(quantity), 0) as total_quantity
+        FROM order_items
+        GROUP BY order_id
+      ) item_qty ON item_qty.order_id = o.id
+      LEFT JOIN (
+        SELECT source_order_id, COALESCE(SUM(quantity), 0) as allocated_quantity
+        FROM internal_stock_allocations
+        GROUP BY source_order_id
+      ) alloc_qty ON alloc_qty.source_order_id = o.id
+      WHERE o.id = ?
+      LIMIT 1
+      `,
+    )
+    .get(sourceOrderId);
+}
+
+export async function getInternalStockAllocationBySaleOrderId(saleOrderId: string) {
+  return db
+    .prepare<InternalStockAllocationDetailRow>(
+      `
+      SELECT
+        isa.*,
+        src.code as source_order_code,
+        c.name as source_customer_name,
+        s.name as supplier_name
+      FROM internal_stock_allocations isa
+      JOIN orders src ON src.id = isa.source_order_id
+      JOIN customers c ON c.id = src.customer_id
+      JOIN suppliers s ON s.id = isa.supplier_id
+      WHERE isa.sale_order_id = ?
+      LIMIT 1
+      `,
+    )
+    .get(saleOrderId);
+}
+
+export async function allocateInternalStockToSaleOrder(data: {
+  sourceOrderId: string;
+  saleOrderId: string;
+  quantity: number;
+}) {
+  const tx = db.transaction(async () => {
+    const safeQuantity = Math.max(1, Math.round(Number(data.quantity) || 0));
+    if (safeQuantity <= 0) {
+      throw new Error("Quantidade invalida para baixa de estoque.");
+    }
+
+    await db
+      .prepare("SELECT pg_advisory_xact_lock(hashtext(?))")
+      .run(`internal-stock-source:${data.sourceOrderId}`);
+    await db
+      .prepare("SELECT pg_advisory_xact_lock(hashtext(?))")
+      .run(`internal-stock-sale:${data.saleOrderId}`);
+
+    const sourceOrder = await db
+      .prepare<{
+        id: string;
+        code: string;
+        is_stock_order: number;
+        is_personal_use: number;
+        status: string;
+      }>(
+        "SELECT id, code, is_stock_order, is_personal_use, status FROM orders WHERE id = ? LIMIT 1",
+      )
+      .get(data.sourceOrderId);
+    if (!sourceOrder) {
+      throw new Error("Pedido de estoque selecionado nao existe.");
+    }
+    if (sourceOrder.is_stock_order !== 1 || sourceOrder.is_personal_use === 1) {
+      throw new Error("Origem invalida: selecione um pedido marcado como estoque.");
+    }
+    if (sourceOrder.status === "CANCELED") {
+      throw new Error("Nao e possivel baixar de um pedido de estoque cancelado.");
+    }
+
+    const saleOrder = await db
+      .prepare<{
+        id: string;
+        code: string;
+        is_stock_order: number;
+        is_personal_use: number;
+      }>(
+        "SELECT id, code, is_stock_order, is_personal_use FROM orders WHERE id = ? LIMIT 1",
+      )
+      .get(data.saleOrderId);
+    if (!saleOrder) {
+      throw new Error("Pedido de venda nao encontrado para baixa de estoque.");
+    }
+    if (saleOrder.is_stock_order === 1 || saleOrder.is_personal_use === 1) {
+      throw new Error("A baixa de estoque so pode ser feita em pedido comercial.");
+    }
+
+    const saleAllocation = await db
+      .prepare<InternalStockAllocationRow>(
+        "SELECT * FROM internal_stock_allocations WHERE sale_order_id = ? LIMIT 1",
+      )
+      .get(data.saleOrderId);
+    if (saleAllocation) {
+      throw new Error("Este pedido de venda ja possui uma baixa de estoque registrada.");
+    }
+
+    const sourceAvailability = await getInternalStockAvailabilityBySourceOrderId(data.sourceOrderId);
+    if (!sourceAvailability) {
+      throw new Error("Nao foi possivel ler o saldo do pedido de estoque.");
+    }
+
+    if (!sourceAvailability.supplier_id || Number(sourceAvailability.unit_cost) <= 0) {
+      throw new Error(
+        "O pedido de estoque selecionado nao possui custo unitario/supplier valido.",
+      );
+    }
+
+    const availableQuantity = Number(sourceAvailability.available_quantity ?? 0);
+    if (availableQuantity < safeQuantity) {
+      throw new Error(
+        `Estoque insuficiente. Disponivel: ${availableQuantity} camisa(s). Solicitado: ${safeQuantity}.`,
+      );
+    }
+
+    const unitCost = Number(sourceAvailability.unit_cost);
+    const totalCost = unitCost * safeQuantity;
+    const nowIso = now();
+
+    await db
+      .prepare(
+        `
+        INSERT INTO internal_stock_allocations (
+          id, source_order_id, sale_order_id, supplier_id, quantity, unit_cost, total_cost, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+      )
+      .run(
+        randomUUID(),
+        data.sourceOrderId,
+        data.saleOrderId,
+        sourceAvailability.supplier_id,
+        safeQuantity,
+        unitCost,
+        totalCost,
+        nowIso,
+      );
+
+    const existingSupplierOrder = await db
+      .prepare<{ id: string }>("SELECT id FROM supplier_orders WHERE order_id = ?")
+      .get(data.saleOrderId);
+
+    if (existingSupplierOrder) {
+      await db
+        .prepare(
+          "UPDATE supplier_orders SET supplier_id = ?, product_cost = ?, extra_fees = ?, package_quantity = ?, unit_cost = ?, total_cost = ?, paid_at = ?, updated_at = ? WHERE order_id = ?",
+        )
+        .run(
+          sourceAvailability.supplier_id,
+          totalCost,
+          0,
+          safeQuantity,
+          unitCost,
+          totalCost,
+          null,
+          nowIso,
+          data.saleOrderId,
+        );
+    } else {
+      await db
+        .prepare(
+          "INSERT INTO supplier_orders (id, order_id, supplier_id, product_cost, extra_fees, package_quantity, unit_cost, total_cost, paid_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          randomUUID(),
+          data.saleOrderId,
+          sourceAvailability.supplier_id,
+          totalCost,
+          0,
+          safeQuantity,
+          unitCost,
+          totalCost,
+          null,
+          nowIso,
+          nowIso,
+        );
+    }
+
+    // Stock entry payment is already registered at purchase time, so this sale should not create an extra outgoing payment.
+    await db
+      .prepare(
+        "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
+      )
+      .run(data.saleOrderId, "OUTGOING", "Fornecedor");
+
+    return {
+      sourceOrderCode: sourceOrder.code,
+      quantity: safeQuantity,
+      unitCost,
+      totalCost,
+    };
+  });
+
+  return tx();
+}
+
 export async function listImportPackageOrders(packageId: string) {
   return db
     .prepare<ImportPackageOrderRow>(
@@ -590,6 +934,34 @@ export async function unlinkOrderFromImportPackage(orderId: string) {
   await db.prepare("DELETE FROM order_packages WHERE order_id = ?").run(orderId);
 }
 
+export async function deleteImportPackageIfOrphan(packageId: string) {
+  const tx = db.transaction(async () => {
+    await db
+      .prepare("SELECT pg_advisory_xact_lock(hashtext(?))")
+      .run(`import-package:${packageId}`);
+
+    const importPackage = await db
+      .prepare<{ id: string; code: string }>(
+        "SELECT id, code FROM import_packages WHERE id = ? LIMIT 1",
+      )
+      .get(packageId);
+    if (!importPackage) return null;
+
+    const linkedRow = await db
+      .prepare<{ count: number }>(
+        "SELECT COUNT(*)::int as count FROM order_packages WHERE package_id = ?",
+      )
+      .get(packageId);
+    const linkedCount = Number(linkedRow?.count ?? 0);
+    if (linkedCount > 0) return null;
+
+    await db.prepare("DELETE FROM import_packages WHERE id = ?").run(packageId);
+    return importPackage.code;
+  });
+
+  return tx();
+}
+
 export async function getLinkedOrdersForImportPackage(packageId: string) {
   return db
     .prepare<{ order_id: string; order_status: string; quantity: number }>(
@@ -679,31 +1051,68 @@ export async function createOrder(data: {
   };
 }) {
   const tx = db.transaction(async () => {
+    const safeTotal = Number(data.total);
+    const safeAmountPaid = Number(data.amountPaid);
+    if (!Number.isFinite(safeTotal) || safeTotal < 0) {
+      throw new Error("Total do pedido invalido.");
+    }
+    if (!Number.isFinite(safeAmountPaid) || safeAmountPaid < 0) {
+      throw new Error("Valor pago invalido.");
+    }
+
+    const hasItemsInput = Array.isArray(data.items) && data.items.length > 0;
     const normalizedItems =
-      data.items && data.items.length > 0
+      hasItemsInput
         ? data.items
-            .map((item) => ({
-              productId: item.productId ?? null,
-              itemName: item.itemName?.trim() || "Camisa de time sob encomenda",
-              itemDescription: item.itemDescription?.trim() || null,
-              size: item.size?.trim() || "M",
-              quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
-              unitPrice: Number(item.unitPrice) >= 0 ? Number(item.unitPrice) : 0,
-              totalPrice:
-                Number(item.totalPrice) >= 0
-                  ? Number(item.totalPrice)
-                  : (Number(item.quantity) > 0 ? Number(item.quantity) : 1) *
-                    (Number(item.unitPrice) >= 0 ? Number(item.unitPrice) : 0),
-            }))
+            .map((item) => {
+              const quantity = toPositiveInteger(item.quantity);
+              if (quantity <= 0) return null;
+
+              const unitPrice = Number(item.unitPrice);
+              if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+                throw new Error("Preco unitario invalido no item do pedido.");
+              }
+
+              const totalPriceInput = Number(item.totalPrice);
+              const totalPrice =
+                Number.isFinite(totalPriceInput) && totalPriceInput >= 0
+                  ? totalPriceInput
+                  : quantity * unitPrice;
+
+              return {
+                productId: item.productId ?? null,
+                itemName: item.itemName?.trim() || "Camisa de time sob encomenda",
+                itemDescription: item.itemDescription?.trim() || null,
+                size: item.size?.trim() || "M",
+                quantity,
+                unitPrice,
+                totalPrice,
+              };
+            })
+            .filter((item): item is NonNullable<typeof item> => item !== null)
             .filter((item) => item.quantity > 0)
         : [];
 
+    if (hasItemsInput && normalizedItems.length === 0) {
+      throw new Error("Pedido sem itens validos.");
+    }
+
     if (normalizedItems.length === 0) {
-      const fallbackQuantity = Number(data.quantity) > 0 ? Number(data.quantity) : 1;
+      const fallbackQuantity = toPositiveInteger(data.quantity);
+      if (fallbackQuantity <= 0) {
+        throw new Error("Pedido sem quantidade valida.");
+      }
+
+      const fallbackUnitPriceInput = Number(data.unitPrice);
       const fallbackUnitPrice =
-        Number(data.unitPrice) >= 0
-          ? Number(data.unitPrice)
-          : Number(data.total) / fallbackQuantity;
+        Number.isFinite(fallbackUnitPriceInput) && fallbackUnitPriceInput >= 0
+          ? fallbackUnitPriceInput
+          : safeTotal / fallbackQuantity;
+
+      if (!Number.isFinite(fallbackUnitPrice) || fallbackUnitPrice < 0) {
+        throw new Error("Preco unitario invalido para item de fallback.");
+      }
+
       normalizedItems.push({
         productId: data.productId ?? null,
         itemName: data.itemName?.trim() || "Camisa de time sob encomenda",
@@ -711,14 +1120,14 @@ export async function createOrder(data: {
         size: data.size?.trim() || "M",
         quantity: fallbackQuantity,
         unitPrice: fallbackUnitPrice,
-        totalPrice: Number(data.total),
+        totalPrice: safeTotal,
       });
     }
 
     const orderId = randomUUID();
     const customerId = randomUUID();
     const addressId = randomUUID();
-    const orderCode = `LC-${Math.floor(100000 + Math.random() * 900000)}`;
+    let orderCode = "";
     const nowIso = now();
 
     await db
@@ -753,28 +1162,44 @@ export async function createOrder(data: {
 
     const statusValue =
       data.status ??
-      (data.amountPaid < data.total ? "AWAITING_PAYMENT" : "AWAITING_SUPPLIER");
+      (safeAmountPaid < safeTotal ? "AWAITING_PAYMENT" : "AWAITING_SUPPLIER");
 
-    await db
-      .prepare(
-        "INSERT INTO orders (id, code, customer_id, address_id, status, payment_type, total_amount, amount_paid, is_personal_use, is_stock_order, currency, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(
-        orderId,
-        orderCode,
-        customerId,
-        addressId,
-        statusValue,
-        data.paymentType,
-        data.total,
-        data.amountPaid,
-        data.isPersonalUse ?? 0,
-        data.isStockOrder ?? 0,
-        "BRL",
-        data.notes ?? null,
-        nowIso,
-        nowIso,
-      );
+    let insertedOrder = false;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      orderCode = generateOrderCodeCandidate();
+      try {
+        await db
+          .prepare(
+            "INSERT INTO orders (id, code, customer_id, address_id, status, payment_type, total_amount, amount_paid, is_personal_use, is_stock_order, currency, notes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            orderId,
+            orderCode,
+            customerId,
+            addressId,
+            statusValue,
+            data.paymentType,
+            safeTotal,
+            safeAmountPaid,
+            data.isPersonalUse ?? 0,
+            data.isStockOrder ?? 0,
+            "BRL",
+            data.notes ?? null,
+            nowIso,
+            nowIso,
+          );
+        insertedOrder = true;
+        break;
+      } catch (error) {
+        if (!isOrderCodeUniqueViolation(error) || attempt === 7) {
+          throw error;
+        }
+      }
+    }
+
+    if (!insertedOrder || !orderCode) {
+      throw new Error("Falha ao gerar codigo unico do pedido.");
+    }
 
     for (const item of normalizedItems) {
       await db
@@ -800,7 +1225,7 @@ export async function createOrder(data: {
       )
       .run(randomUUID(), orderId, statusValue, null, nowIso);
 
-    if (data.amountPaid > 0) {
+    if (safeAmountPaid > 0) {
       await db
         .prepare(
           "INSERT INTO payments (id, order_id, direction, amount, method, paid_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -809,7 +1234,7 @@ export async function createOrder(data: {
           randomUUID(),
           orderId,
           "INCOMING",
-          data.amountPaid,
+          safeAmountPaid,
           "Reserva online",
           nowIso,
           nowIso,
@@ -869,6 +1294,11 @@ export async function updateOrderStatus(orderId: string, status: string, note?: 
 
 export async function deleteOrder(orderId: string) {
   const tx = db.transaction(async () => {
+    await db
+      .prepare(
+        "DELETE FROM internal_stock_allocations WHERE sale_order_id = ? OR source_order_id = ?",
+      )
+      .run(orderId, orderId);
     await db.prepare("DELETE FROM payments WHERE order_id = ?").run(orderId);
     await db.prepare("DELETE FROM order_status_history WHERE order_id = ?").run(orderId);
     await db.prepare("DELETE FROM order_packages WHERE order_id = ?").run(orderId);

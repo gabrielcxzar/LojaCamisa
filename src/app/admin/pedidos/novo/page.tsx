@@ -3,6 +3,7 @@ import { NewOrderCustomerFields } from "@/components/admin/new-order-customer-fi
 import { NewOrderDetails } from "@/components/admin/new-order-details";
 import { createOrderManual } from "@/app/admin/pedidos/novo/actions";
 import {
+  listAvailableInternalStockOrders,
   listCustomerPresets,
   listImportPackages,
   listProducts,
@@ -12,11 +13,12 @@ import { requireAdmin } from "@/lib/require-admin";
 
 export default async function NewOrderPage() {
   await requireAdmin();
-  const [products, suppliers, packages, customerPresets] = await Promise.all([
+  const [products, suppliers, packages, customerPresets, internalStockOrders] = await Promise.all([
     listProducts(),
     listSuppliers(),
     listImportPackages(),
     listCustomerPresets(),
+    listAvailableInternalStockOrders(),
   ]);
   const sortedProducts = products.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -50,6 +52,15 @@ export default async function NewOrderPage() {
             code: importPackage.code,
             trackingCode: importPackage.tracking_code,
             linkedOrders: Number(importPackage.linked_orders ?? 0),
+          }))}
+          internalStockOrders={internalStockOrders.map((stockOrder) => ({
+            id: stockOrder.source_order_id,
+            code: stockOrder.source_order_code,
+            customerName: stockOrder.source_customer_name,
+            supplierName: stockOrder.supplier_name,
+            availableQuantity: Number(stockOrder.available_quantity ?? 0),
+            unitCost: Number(stockOrder.unit_cost ?? 0),
+            packageCode: stockOrder.package_code,
           }))}
         />
       </form>

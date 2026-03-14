@@ -7,6 +7,8 @@ import { Container } from "@/components/layout/container";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import {
+  getInternalStockAllocationBySaleOrderId,
+  getInternalStockAvailabilityBySourceOrderId,
   getImportPackageByOrderId,
   getOrderDetail,
   getSetting,
@@ -53,11 +55,14 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
 
   const { order, customer, address, items, supplierOrder, shipment, statusHistory, payments } = data;
 
-  const [suppliers, logs, stalledSetting, importPackage] = await Promise.all([
+  const [suppliers, logs, stalledSetting, importPackage, internalStockAllocation, stockEntryBalance] =
+    await Promise.all([
     listSuppliers(),
     listActionLogs(order.id),
     getSetting("stalled_days"),
     getImportPackageByOrderId(order.id),
+    getInternalStockAllocationBySaleOrderId(order.id),
+    getInternalStockAvailabilityBySourceOrderId(order.id),
   ]);
   const importPackageOrders = importPackage
     ? await listImportPackageOrders(importPackage.id)
@@ -68,6 +73,12 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
   );
   const stalledDays = stalledSetting ? Number(stalledSetting.value) : 7;
   const orderQuantity = items.reduce((sum, item) => sum + Number(item.quantity), 0);
+  const stockEntryAllocated = stockEntryBalance
+    ? Number(stockEntryBalance.allocated_quantity ?? 0)
+    : 0;
+  const stockEntryAvailable = stockEntryBalance
+    ? Number(stockEntryBalance.available_quantity ?? 0)
+    : 0;
   const supplierProductCost = supplierOrder?.product_cost ? Number(supplierOrder.product_cost) : 0;
   const supplierExtraFees = supplierOrder?.extra_fees ? Number(supplierOrder.extra_fees) : 0;
   const supplierPackageQuantity = supplierOrder?.package_quantity
@@ -145,6 +156,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
           <Badge tone="accent">{statusLabel[order.status]}</Badge>
           {order.is_personal_use === 1 && <Badge tone="muted">Uso pessoal</Badge>}
           {order.is_stock_order === 1 && <Badge tone="muted">Estoque</Badge>}
+          {internalStockAllocation && <Badge tone="muted">Venda de estoque interno</Badge>}
         </div>
         <h1 className="text-2xl font-semibold">
           Pedido {order.code} • {customer.name}
@@ -204,6 +216,15 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                       : "Comercial"}
                 </span>
               </div>
+              {internalStockAllocation && (
+                <div className="flex justify-between text-neutral-500">
+                  <span>Origem do custo</span>
+                  <span>
+                    Estoque {internalStockAllocation.source_order_code} (
+                    {Number(internalStockAllocation.quantity)} camisa(s))
+                  </span>
+                </div>
+              )}
               {order.notes && (
                 <div className="text-neutral-500">
                   <span className="font-semibold text-neutral-700">
@@ -342,6 +363,9 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                 <p>
                   <span className="font-semibold text-neutral-900">{importPackage.code}</span>
                 </p>
+                {importPackage.supplier_name && (
+                  <p>Fornecedor do pacote: {importPackage.supplier_name}</p>
+                )}
                 <p>Pedidos no pacote: {Number(importPackage.linked_orders)}</p>
                 <p>Qtd total pacote: {Number(importPackage.package_quantity)}</p>
                 <p>
@@ -392,6 +416,48 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
             </div>
           )}
 
+          {internalStockAllocation && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+              <h2 className="text-lg font-semibold">Baixa de estoque interno</h2>
+              <div className="mt-4 space-y-2 text-sm text-neutral-600">
+                <p>
+                  Pedido origem:{" "}
+                  <Link
+                    href={`/admin/pedidos/${internalStockAllocation.source_order_id}`}
+                    className="font-semibold text-neutral-900 underline underline-offset-4"
+                  >
+                    {internalStockAllocation.source_order_code}
+                  </Link>
+                </p>
+                <p>Cliente origem: {internalStockAllocation.source_customer_name}</p>
+                <p>Fornecedor: {internalStockAllocation.supplier_name}</p>
+                <p>Quantidade baixada: {Number(internalStockAllocation.quantity)} camisa(s)</p>
+                <p>
+                  Custo unitario herdado: R$ {Number(internalStockAllocation.unit_cost).toFixed(2)}
+                </p>
+                <p>
+                  Custo total herdado: R$ {Number(internalStockAllocation.total_cost).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {order.is_stock_order === 1 && stockEntryBalance && (
+            <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+              <h2 className="text-lg font-semibold">Saldo do estoque interno</h2>
+              <div className="mt-4 space-y-2 text-sm text-neutral-600">
+                <p>
+                  Quantidade original: {Number(stockEntryBalance.total_quantity)} camisa(s)
+                </p>
+                <p>Quantidade baixada: {stockEntryAllocated} camisa(s)</p>
+                <p>Saldo disponivel: {stockEntryAvailable} camisa(s)</p>
+                <p>
+                  Custo unitario deste estoque: R$ {Number(stockEntryBalance.unit_cost).toFixed(2)}
+                </p>
+              </div>
+            </div>
+          )}
+
           <div className="rounded-2xl border border-neutral-200 bg-white p-6">
             <h2 className="text-lg font-semibold">Financeiro do pedido</h2>
             <SupplierCostForm
@@ -411,6 +477,17 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                         importPackageTotalQuantity,
                         orderQuantity,
                       ),
+                    }
+                  : null
+              }
+              internalStockAllocation={
+                internalStockAllocation
+                  ? {
+                      sourceOrderCode: internalStockAllocation.source_order_code,
+                      sourceCustomerName: internalStockAllocation.source_customer_name,
+                      quantity: Number(internalStockAllocation.quantity),
+                      unitCost: Number(internalStockAllocation.unit_cost),
+                      totalCost: Number(internalStockAllocation.total_cost),
                     }
                   : null
               }

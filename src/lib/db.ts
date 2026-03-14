@@ -148,6 +148,20 @@ const schemaSql = `
   ALTER TABLE orders
     ADD COLUMN IF NOT EXISTS is_stock_order INTEGER NOT NULL DEFAULT 0;
 
+  CREATE TABLE IF NOT EXISTS internal_stock_allocations (
+    id TEXT PRIMARY KEY,
+    source_order_id TEXT NOT NULL,
+    sale_order_id TEXT NOT NULL UNIQUE,
+    supplier_id TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    unit_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+    total_cost DOUBLE PRECISION NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (source_order_id) REFERENCES orders(id),
+    FOREIGN KEY (sale_order_id) REFERENCES orders(id),
+    FOREIGN KEY (supplier_id) REFERENCES suppliers(id)
+  );
+
   CREATE TABLE IF NOT EXISTS order_items (
     id TEXT PRIMARY KEY,
     order_id TEXT NOT NULL,
@@ -245,6 +259,8 @@ const schemaSql = `
   CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
   CREATE INDEX IF NOT EXISTS idx_import_packages_tracking_code ON import_packages(tracking_code);
   CREATE INDEX IF NOT EXISTS idx_order_packages_package_id ON order_packages(package_id);
+  CREATE INDEX IF NOT EXISTS idx_internal_stock_source ON internal_stock_allocations(source_order_id);
+  CREATE INDEX IF NOT EXISTS idx_internal_stock_sale ON internal_stock_allocations(sale_order_id);
   CREATE INDEX IF NOT EXISTS idx_customers_name ON customers(name);
   CREATE INDEX IF NOT EXISTS idx_logs_order_id ON action_logs(order_id);
 `;

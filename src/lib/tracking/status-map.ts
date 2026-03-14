@@ -7,6 +7,8 @@ const AWAITING_SUPPLIER_TERMS = [
   "shipment accepted",
   "accepted by carrier",
   "awaiting dispatch",
+  "postagem",
+  "postado",
 ];
 
 const PREPARING_TERMS = [
@@ -19,6 +21,15 @@ const PREPARING_TERMS = [
   "arrived at destination country",
   "arrived in destination",
   "held by customs",
+  "fiscalização",
+  "analise",
+  "análise",
+  "importação",
+  "importacao",
+  "aduaneira",
+  "tributado",
+  "pagamento",
+  "recebido no brasil",
 ];
 
 const SHIPPED_TERMS = [
@@ -30,6 +41,10 @@ const SHIPPED_TERMS = [
   "posted",
   "dispatched",
   "shipment on the way",
+  "em trânsito",
+  "em transito",
+  "encaminhado",
+  "saiu para entrega",
 ];
 
 const DELIVERED_TERMS = [
@@ -46,6 +61,12 @@ const TAX_PENDING_TERMS = [
   "clearance",
   "duties",
   "import",
+  "tributado",
+  "pagamento",
+  "fiscalização",
+  "fiscalizacao",
+  "taxa",
+  "aguardando pagamento",
 ];
 
 function containsAny(text: string, terms: string[]) {

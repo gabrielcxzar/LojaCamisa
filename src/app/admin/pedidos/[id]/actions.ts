@@ -4,7 +4,9 @@ import { redirect } from "next/navigation";
 import {
   type CreateOrderItemInput,
   createOrder,
+  deleteImportPackageIfOrphan,
   deleteOrder,
+  getInternalStockAllocationBySaleOrderId,
   getOrderDetail,
   getImportPackageByOrderId,
   getLinkedOrdersForImportPackage,
@@ -78,6 +80,8 @@ export async function updateSupplierInfo(formData: FormData) {
   if (!orderId) return;
 
   try {
+    const stockAllocation = await getInternalStockAllocationBySaleOrderId(orderId);
+
     if (
       totalSold < 0 ||
       legacyUnitCost < 0 ||
@@ -91,7 +95,12 @@ export async function updateSupplierInfo(formData: FormData) {
     if (!isPersonalUse && !isStockOrder && totalSold <= 0) {
       throw new Error("Informe o valor vendido total do pedido.");
     }
-    if (!isPersonalUse && productCostInput <= 0) {
+    if (stockAllocation && (isPersonalUse || isStockOrder)) {
+      throw new Error(
+        "Pedido com baixa de estoque interno nao pode ser alterado para uso pessoal/estoque.",
+      );
+    }
+    if (!stockAllocation && !isPersonalUse && productCostInput <= 0) {
       throw new Error("Pedido comercial exige valor pago ao fornecedor.");
     }
 
@@ -101,6 +110,36 @@ export async function updateSupplierInfo(formData: FormData) {
       isPersonalUse,
       isStockOrder,
     });
+
+    if (stockAllocation) {
+      await upsertSupplierOrder({
+        orderId,
+        supplierId: stockAllocation.supplier_id,
+        productCost: Number(stockAllocation.total_cost),
+        extraFees: 0,
+        packageQuantity: Number(stockAllocation.quantity),
+        unitCost: Number(stockAllocation.unit_cost),
+        totalCost: Number(stockAllocation.total_cost),
+        paidAt: null,
+      });
+
+      await db
+        .prepare(
+          "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
+        )
+        .run(orderId, "OUTGOING", "Fornecedor");
+
+      await logAction({
+        userEmail: session.user.email ?? "admin",
+        action: `Atualizou venda com custo travado do estoque ${stockAllocation.source_order_code}`,
+        orderId,
+      });
+
+      revalidatePath(`/admin/pedidos/${orderId}`);
+      revalidatePath("/admin/pedidos");
+      revalidatePath("/admin/financeiro");
+      return;
+    }
 
     const linkedImportPackage = await getImportPackageByOrderId(orderId);
     if (linkedImportPackage) {
@@ -371,12 +410,12 @@ export async function duplicateOrderAction(formData: FormData) {
     itemName: item.item_name ?? item.name ?? "Camisa de time sob encomenda",
     itemDescription: item.item_description ?? null,
     size: item.size,
-    quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1,
+    quantity: Number(item.quantity),
     unitPrice: Number(item.unit_price),
     totalPrice:
       Number(item.total_price) > 0
         ? Number(item.total_price)
-        : (Number(item.quantity) > 0 ? Number(item.quantity) : 1) * Number(item.unit_price),
+        : Number(item.quantity) * Number(item.unit_price),
   }));
 
   const duplicated = await createOrder({
@@ -431,6 +470,14 @@ export async function deleteOrderAction(formData: FormData) {
 
   if (linkedImportPackage) {
     await recalculateImportPackageAllocations(linkedImportPackage.id);
+    const deletedPackageCode = await deleteImportPackageIfOrphan(linkedImportPackage.id);
+    if (deletedPackageCode) {
+      await logAction({
+        userEmail: session.user.email ?? "admin",
+        action: `Removeu pacote sem pedidos ${deletedPackageCode}`,
+        orderId: null,
+      });
+    }
   }
 
   await logAction({
@@ -440,5 +487,7 @@ export async function deleteOrderAction(formData: FormData) {
   });
 
   revalidatePath(`/admin/pedidos`);
+  revalidatePath("/admin/pedidos/novo");
+  revalidatePath("/admin/financeiro");
   redirect("/admin/pedidos");
 }

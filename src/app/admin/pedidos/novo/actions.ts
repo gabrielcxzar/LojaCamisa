@@ -3,8 +3,10 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/require-admin";
 import { registerShipmentTracking } from "@/lib/tracking";
 import {
+  allocateInternalStockToSaleOrder,
   type CreateOrderItemInput,
   createOrder,
+  deleteOrder,
   getImportPackageById,
   getProductBySlug,
   linkOrderToImportPackage,
@@ -52,6 +54,7 @@ export async function createOrderManual(formData: FormData) {
 
   const packageMode = String(formData.get("packageMode") ?? "new").trim();
   const existingPackageId = String(formData.get("existingPackageId") ?? "").trim();
+  const stockSourceOrderId = String(formData.get("stockSourceOrderId") ?? "").trim();
   const supplierId = String(formData.get("supplierId") ?? "").trim();
   const packageQuantityInput = normalizeNumber(formData.get("packageQuantity"), 0);
   const productCostInput = normalizeNumber(formData.get("productCost"), 0);
@@ -249,8 +252,14 @@ export async function createOrderManual(formData: FormData) {
     throw new Error("Valor vendido invalido.");
   }
 
-  if (!["new", "existing", "none"].includes(packageMode)) {
+  if (!["new", "existing", "none", "internal_stock"].includes(packageMode)) {
     throw new Error("Modo de pacote invalido.");
+  }
+  if (packageMode === "internal_stock" && (isPersonalUse || isStockOrder)) {
+    throw new Error("Baixa de estoque interno so pode ser usada em pedido comercial.");
+  }
+  if (packageMode === "internal_stock" && !stockSourceOrderId) {
+    throw new Error("Selecione um pedido de estoque para dar baixa.");
   }
   if (packageMode === "none" && !isPersonalUse) {
     throw new Error("Pedido comercial deve ser vinculado a um pacote.");
@@ -306,6 +315,26 @@ export async function createOrderManual(formData: FormData) {
     },
   });
 
+  let internalStockSummary: {
+    sourceOrderCode: string;
+    quantity: number;
+    unitCost: number;
+    totalCost: number;
+  } | null = null;
+
+  if (packageMode === "internal_stock") {
+    try {
+      internalStockSummary = await allocateInternalStockToSaleOrder({
+        sourceOrderId: stockSourceOrderId,
+        saleOrderId: orderId,
+        quantity: totalQuantity,
+      });
+    } catch (error) {
+      await deleteOrder(orderId);
+      throw error;
+    }
+  }
+
   let packageIdToLink: string | null = null;
   if (packageMode === "new") {
     const packageQuantity = Math.max(1, Math.round(packageQuantityInput || totalQuantity));
@@ -346,7 +375,9 @@ export async function createOrderManual(formData: FormData) {
 
   await logAction({
     userEmail: session.user.email ?? "admin",
-    action: "Criou pedido manual",
+    action: internalStockSummary
+      ? `Criou pedido manual com baixa de estoque ${internalStockSummary.sourceOrderCode} (${internalStockSummary.quantity} camisa(s))`
+      : "Criou pedido manual",
     orderId,
   });
 

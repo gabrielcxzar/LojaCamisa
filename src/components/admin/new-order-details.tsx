@@ -23,10 +23,21 @@ type ImportPackageOption = {
   linkedOrders: number;
 };
 
+type InternalStockOrderOption = {
+  id: string;
+  code: string;
+  customerName: string;
+  supplierName: string;
+  availableQuantity: number;
+  unitCost: number;
+  packageCode: string | null;
+};
+
 type Props = {
   products: ProductOption[];
   suppliers: SupplierOption[];
   packages: ImportPackageOption[];
+  internalStockOrders: InternalStockOrderOption[];
 };
 
 type QuickItemInput = {
@@ -58,7 +69,12 @@ function defaultPercentByPaymentType(paymentType: string) {
 
 const SHIRT_SIZES = ["PP", "P", "M", "G", "GG"];
 
-export function NewOrderDetails({ products, suppliers, packages }: Props) {
+export function NewOrderDetails({
+  products,
+  suppliers,
+  packages,
+  internalStockOrders,
+}: Props) {
   const [entryMode, setEntryMode] = useState<"quick" | "advanced">("quick");
   const [productMode, setProductMode] = useState<"custom" | "existing">("custom");
   const [productSlug, setProductSlug] = useState("");
@@ -70,11 +86,11 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
       model: "",
       description: "",
       sizeQuantities: {
-        PP: "",
-        P: "",
+        PP: "0",
+        P: "0",
         M: "1",
-        G: "",
-        GG: "",
+        G: "0",
+        GG: "0",
       },
     },
   ]);
@@ -87,10 +103,15 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
   const [isPersonalUse, setIsPersonalUse] = useState(false);
   const [isStockOrder, setIsStockOrder] = useState(false);
 
-  const [packageMode, setPackageMode] = useState<"new" | "existing" | "none">(
+  const [packageMode, setPackageMode] = useState<
+    "new" | "existing" | "none" | "internal_stock"
+  >(
     "new",
   );
   const [existingPackageId, setExistingPackageId] = useState(packages[0]?.id ?? "");
+  const [stockSourceOrderId, setStockSourceOrderId] = useState(
+    internalStockOrders[0]?.id ?? "",
+  );
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [packageQuantityInput, setPackageQuantityInput] = useState("1");
   const [productCostInput, setProductCostInput] = useState("");
@@ -178,6 +199,17 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
     quantityValue,
   ]);
 
+  const selectedInternalStockOrder = useMemo(
+    () => internalStockOrders.find((stockOrder) => stockOrder.id === stockSourceOrderId) ?? null,
+    [internalStockOrders, stockSourceOrderId],
+  );
+
+  const stockAllocationAvailable =
+    packageMode !== "internal_stock" ||
+    (selectedInternalStockOrder !== null &&
+      quantityValue > 0 &&
+      selectedInternalStockOrder.availableQuantity >= quantityValue);
+
   const syncedPaid = useMemo(() => {
     if (syncSource === "percent") {
       const percent = Math.max(0, parseNumber(amountPaidPercentInput));
@@ -254,11 +286,11 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
         model: "",
         description: "",
         sizeQuantities: {
-          PP: "",
-          P: "",
+          PP: "0",
+          P: "0",
           M: "1",
-          G: "",
-          GG: "",
+          G: "0",
+          GG: "0",
         },
       },
     ]);
@@ -358,7 +390,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
                         onChange={(event) =>
                           updateQuickItemSize(item.id, shirtSize, event.target.value)
                         }
-                        className="w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm"
+                        className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-900"
                       />
                     </label>
                   ))}
@@ -571,6 +603,9 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
                 const checked = event.target.checked;
                 setIsPersonalUse(checked);
                 if (checked) setIsStockOrder(false);
+                if (checked && packageMode === "internal_stock") {
+                  setPackageMode("none");
+                }
               }}
             />
             Uso pessoal (nao entra em faturamento e lucro)
@@ -584,6 +619,9 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
                 const checked = event.target.checked;
                 setIsStockOrder(checked);
                 if (checked) setIsPersonalUse(false);
+                if (checked && packageMode === "internal_stock") {
+                  setPackageMode("new");
+                }
               }}
             />
             Pedido para estoque (sem venda ao cliente)
@@ -595,6 +633,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
         <h2 className="text-lg font-semibold">Pacote de importacao</h2>
         <div className="mt-4 space-y-4">
           <input type="hidden" name="packageMode" value={packageMode} />
+          <input type="hidden" name="stockSourceOrderId" value={stockSourceOrderId} />
           <label className="flex items-center gap-2 text-sm text-neutral-600">
             <input
               type="radio"
@@ -619,12 +658,82 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
             <input
               type="radio"
               name="packageModeOption"
+              value="internal_stock"
+              checked={packageMode === "internal_stock"}
+              onChange={() => {
+                setPackageMode("internal_stock");
+                setIsPersonalUse(false);
+                setIsStockOrder(false);
+              }}
+            />
+            Baixar do estoque interno
+          </label>
+          <label className="flex items-center gap-2 text-sm text-neutral-600">
+            <input
+              type="radio"
+              name="packageModeOption"
               value="none"
               checked={packageMode === "none"}
               onChange={() => setPackageMode("none")}
             />
             Sem pacote (pedido isolado)
           </label>
+
+          {packageMode === "internal_stock" && (
+            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+              {internalStockOrders.length === 0 ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                  Nenhum pedido de estoque com saldo e custo unitario disponivel.
+                </p>
+              ) : (
+                <>
+                  <select
+                    value={stockSourceOrderId}
+                    onChange={(event) => setStockSourceOrderId(event.target.value)}
+                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                  >
+                    {internalStockOrders.map((stockOrder) => (
+                      <option key={stockOrder.id} value={stockOrder.id}>
+                        {stockOrder.code} - {stockOrder.customerName} - saldo{" "}
+                        {stockOrder.availableQuantity} camisa(s)
+                      </option>
+                    ))}
+                  </select>
+                  {selectedInternalStockOrder && (
+                    <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                      Fornecedor:{" "}
+                      <span className="font-semibold">{selectedInternalStockOrder.supplierName}</span>
+                      <br />
+                      Custo unitario herdado:{" "}
+                      <span className="font-semibold">
+                        R$ {formatMoney(selectedInternalStockOrder.unitCost)}
+                      </span>
+                      <br />
+                      Saldo disponivel:{" "}
+                      <span className="font-semibold">
+                        {selectedInternalStockOrder.availableQuantity} camisa(s)
+                      </span>
+                      <br />
+                      {selectedInternalStockOrder.packageCode
+                        ? `Origem: pacote ${selectedInternalStockOrder.packageCode}`
+                        : "Origem: pedido de estoque sem pacote vinculado"}
+                    </p>
+                  )}
+                  {selectedInternalStockOrder &&
+                    selectedInternalStockOrder.availableQuantity < quantityValue && (
+                      <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                        Quantidade do pedido ({quantityValue}) maior que o saldo disponivel (
+                        {selectedInternalStockOrder.availableQuantity}).
+                      </p>
+                    )}
+                </>
+              )}
+              <p className="text-xs text-neutral-500">
+                O pedido de venda herda o custo unitario do estoque e nao altera as quantidades do
+                pacote original.
+              </p>
+            </div>
+          )}
 
           {packageMode === "existing" && (
             <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
@@ -783,7 +892,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
           className="w-full"
           name="afterSubmit"
           value="open"
-          disabled={entryMode === "quick" && quantityValue <= 0}
+          disabled={(entryMode === "quick" && quantityValue <= 0) || !stockAllocationAvailable}
         >
           Criar e abrir pedido
         </SubmitButton>
@@ -793,7 +902,7 @@ export function NewOrderDetails({ products, suppliers, packages }: Props) {
           variant="outline"
           name="afterSubmit"
           value="new"
-          disabled={entryMode === "quick" && quantityValue <= 0}
+          disabled={(entryMode === "quick" && quantityValue <= 0) || !stockAllocationAvailable}
         >
           Criar e novo
         </SubmitButton>
