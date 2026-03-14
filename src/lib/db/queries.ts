@@ -1060,10 +1060,11 @@ export async function createOrder(data: {
       throw new Error("Valor pago invalido.");
     }
 
-    const hasItemsInput = Array.isArray(data.items) && data.items.length > 0;
+    const itemsInput = data.items ?? [];
+    const hasItemsInput = itemsInput.length > 0;
     const normalizedItems =
       hasItemsInput
-        ? data.items
+        ? itemsInput
             .map((item) => {
               const quantity = toPositiveInteger(item.quantity);
               if (quantity <= 0) return null;
