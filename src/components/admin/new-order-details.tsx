@@ -68,6 +68,10 @@ function defaultPercentByPaymentType(paymentType: string) {
 }
 
 const SHIRT_SIZES = ["PP", "P", "M", "G", "GG"];
+const fieldClassName =
+  "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+const compactFieldClassName =
+  "w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 
 export function NewOrderDetails({
   products,
@@ -366,13 +370,13 @@ export function NewOrderDetails({
                   placeholder="Time (ex: Vitoria)"
                   value={item.team}
                   onChange={(event) => updateQuickItem(item.id, "team", event.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                  className={fieldClassName}
                 />
                 <input
                   placeholder="Modelo (ex: 2025 torcedor)"
                   value={item.model}
                   onChange={(event) => updateQuickItem(item.id, "model", event.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                  className={fieldClassName}
                 />
                 <div className="grid gap-3 sm:grid-cols-5">
                   {SHIRT_SIZES.map((shirtSize) => (
@@ -390,7 +394,7 @@ export function NewOrderDetails({
                         onChange={(event) =>
                           updateQuickItemSize(item.id, shirtSize, event.target.value)
                         }
-                        className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-900"
+                        className={`${compactFieldClassName} text-center`}
                       />
                     </label>
                   ))}
@@ -401,7 +405,7 @@ export function NewOrderDetails({
                   onChange={(event) =>
                     updateQuickItem(item.id, "description", event.target.value)
                   }
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
+                  className={fieldClassName}
                 />
                 {SHIRT_SIZES.map((shirtSize) => {
                   const itemQuantity = parseNumber(item.sizeQuantities[shirtSize] ?? "");
@@ -446,22 +450,22 @@ export function NewOrderDetails({
                 name="customName"
                 placeholder="Nome da camisa"
                 defaultValue="Camisa de time sob encomenda"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="customTeam"
                 placeholder="Time (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="customModel"
                 placeholder="Modelo (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="customDescription"
                 placeholder="Descricao (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
             </div>
 
@@ -477,7 +481,7 @@ export function NewOrderDetails({
               name="productSlug"
               value={productSlug}
               onChange={(event) => setProductSlug(event.target.value)}
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              className={fieldClassName}
             >
               <option value="">Selecione (opcional)</option>
               {products.map((product) => (
@@ -510,7 +514,7 @@ export function NewOrderDetails({
               <select
                 name="size"
                 defaultValue="M"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
                 {SHIRT_SIZES.map((shirtSize) => (
                   <option key={shirtSize} value={shirtSize}>
@@ -524,7 +528,7 @@ export function NewOrderDetails({
                 min={1}
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
             </>
           )}
@@ -535,7 +539,7 @@ export function NewOrderDetails({
             placeholder="Valor vendido total (R$)"
             value={orderTotalInput}
             onChange={(event) => setOrderTotalInput(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+            className={fieldClassName}
           />
           <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
           <input type="hidden" name="amountPaidSource" value={syncSource} />
@@ -552,7 +556,7 @@ export function NewOrderDetails({
                 name="paymentType"
                 value={paymentType}
                 onChange={(event) => handlePaymentTypeChange(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
                 <option value="DEPOSIT_50">50% do valor</option>
                 <option value="FULL">100% do valor</option>
@@ -565,7 +569,7 @@ export function NewOrderDetails({
                 placeholder="% pago"
                 value={syncSource === "percent" ? amountPaidPercentInput : syncedPaid.percent}
                 onChange={(event) => syncAmountFromPercent(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="amountPaid"
@@ -574,7 +578,7 @@ export function NewOrderDetails({
                 placeholder="Valor pago"
                 value={syncSource === "amount" ? amountPaidInput : syncedPaid.amount}
                 onChange={(event) => syncPercentFromAmount(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
             </>
           ) : (
@@ -592,7 +596,7 @@ export function NewOrderDetails({
           <textarea
             name="notes"
             placeholder="Observacoes internas"
-            className="min-h-[96px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+            className="min-h-[96px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
           />
           <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
             <input
@@ -690,7 +694,7 @@ export function NewOrderDetails({
                   <select
                     value={stockSourceOrderId}
                     onChange={(event) => setStockSourceOrderId(event.target.value)}
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   >
                     {internalStockOrders.map((stockOrder) => (
                       <option key={stockOrder.id} value={stockOrder.id}>
@@ -741,7 +745,7 @@ export function NewOrderDetails({
                 name="existingPackageId"
                 value={existingPackageId}
                 onChange={(event) => setExistingPackageId(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
                 {packages.length === 0 && <option value="">Nenhum pacote cadastrado</option>}
                 {packages.map((importPackage) => (
@@ -766,7 +770,7 @@ export function NewOrderDetails({
                 name="supplierId"
                 value={supplierId}
                 onChange={(event) => setSupplierId(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
                 {suppliers.length === 0 && <option value="">Sem fornecedor cadastrado</option>}
                 {suppliers.map((supplier) => (
@@ -783,7 +787,7 @@ export function NewOrderDetails({
                 value={packageQuantityInput}
                 onChange={(event) => setPackageQuantityInput(event.target.value)}
                 placeholder="Qtd total de camisas no pacote"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="productCost"
@@ -793,12 +797,12 @@ export function NewOrderDetails({
                 value={productCostInput}
                 onChange={(event) => setProductCostInput(event.target.value)}
                 placeholder="Valor pago ao fornecedor (R$)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="trackingCode"
                 placeholder="Codigo de rastreio (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <label className="flex items-center gap-2 text-sm text-neutral-600">
                 <input
@@ -819,7 +823,7 @@ export function NewOrderDetails({
                     value={extraFeesInput}
                     onChange={(event) => setExtraFeesInput(event.target.value)}
                     placeholder="Taxa de importacao (R$)"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="internalShipping"
@@ -829,28 +833,28 @@ export function NewOrderDetails({
                     value={internalShippingInput}
                     onChange={(event) => setInternalShippingInput(event.target.value)}
                     placeholder="Frete interno (R$)"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="carrier"
                     placeholder="Transportadora (17track, opcional)"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="originCountry"
                     defaultValue="China"
                     placeholder="Pais de origem"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="paidAt"
                     type="date"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <textarea
                     name="packageNotes"
                     placeholder="Observacoes do pacote"
-                    className="min-h-[80px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className="min-h-[80px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
                   />
                 </>
               )}
