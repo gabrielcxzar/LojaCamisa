@@ -306,6 +306,56 @@ let postgresClient: Sql | null = null;
 let schemaInitialized = false;
 let schemaInitPromise: Promise<void> | null = null;
 
+async function isSchemaReady(client: Sql) {
+  const result = await client.unsafe<
+    Array<{
+      orders_ready: boolean;
+      supplier_orders_ready: boolean;
+      import_packages_ready: boolean;
+      internal_stock_ready: boolean;
+    }>
+  >(
+    `
+    SELECT
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'orders'
+          AND column_name = 'is_stock_order'
+      ) AS orders_ready,
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'supplier_orders'
+          AND column_name = 'package_quantity'
+      ) AS supplier_orders_ready,
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'import_packages'
+          AND column_name = 'internal_shipping'
+      ) AS import_packages_ready,
+      EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'internal_stock_allocations'
+      ) AS internal_stock_ready
+    `,
+  );
+
+  const row = result[0];
+  return Boolean(
+    row?.orders_ready &&
+      row?.supplier_orders_ready &&
+      row?.import_packages_ready &&
+      row?.internal_stock_ready,
+  );
+}
+
 function getPostgresClient() {
   if (!postgresClient) {
     const poolMax = Number(process.env.DB_POOL_MAX ?? 5);
@@ -336,6 +386,12 @@ export async function initSchema() {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
       const client = getPostgresClient();
+      const ready = await isSchemaReady(client);
+      if (ready) {
+        schemaInitialized = true;
+        return;
+      }
+
       await client.unsafe(schemaSql);
       schemaInitialized = true;
     })();
