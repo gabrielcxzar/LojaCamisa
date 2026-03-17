@@ -5,7 +5,11 @@ import {
   calculatePackageAllocation,
   calculatePackageCosts,
 } from "@/modules/shared/domain/calculators";
-import { OrderStatus, PaymentDirection } from "@/modules/shared/domain/enums";
+import {
+  ORDER_STATUS_VALUES,
+  type OrderStatus as OrderStatusValue,
+  PaymentDirection,
+} from "@/modules/shared/domain/enums";
 import { parseUpdateOrderFinanceFormData } from "@/modules/shared/validation/order-forms";
 import {
   type CreateOrderItemInput,
@@ -37,12 +41,11 @@ export async function updateOrderStatusAction(formData: FormData) {
   const note = String(formData.get("note") ?? "");
 
   if (!orderId || !status) return;
-  const allowed = Object.values(OrderStatus);
-  if (!allowed.includes(status)) {
+  if (!ORDER_STATUS_VALUES.includes(status as OrderStatusValue)) {
     throw new Error("Status invalido.");
   }
 
-  await updateOrderStatus(orderId, status, note || null);
+  await updateOrderStatus(orderId, status as OrderStatusValue, note || null);
   await logAction({
     userEmail: session.user.email ?? "admin",
     action: `Alterou status para ${status}`,
