@@ -2,9 +2,15 @@ export const dynamic = "force-dynamic";
 
 import Link from "next/link";
 
+import {
+  getDashboardShippingOverview,
+  getDashboardSummary,
+  listDashboardRecentOrders,
+  listDashboardTaxPendingOrders,
+} from "@/modules/dashboard/infrastructure/dashboard-read-repository";
+import { calculateMargin } from "@/modules/shared/domain/calculators";
 import { Container } from "@/components/layout/container";
 import { Badge } from "@/components/ui/badge";
-import { db } from "@/lib/db";
 import { getSetting, getStalledOrders } from "@/lib/db/queries";
 import { requireAdmin } from "@/lib/require-admin";
 import { isTrackingTaxPending } from "@/lib/tracking/status-map";
@@ -18,34 +24,6 @@ const statusLabel: Record<string, string> = {
   CANCELED: "Cancelado",
 };
 
-type DashboardSummaryRow = {
-  total_orders: number;
-  delivered_orders: number;
-  awaiting_payment: number;
-  awaiting_supplier: number;
-  preparing: number;
-  shipped: number;
-  personal_orders: number;
-  monthly_total_sales: number;
-  monthly_total_paid_supplier: number;
-};
-
-type RecentOrder = {
-  id: string;
-  code: string;
-  customer_name: string;
-  total_amount: number;
-  status: string;
-  updated_at: string;
-};
-
-type TaxPendingOrder = {
-  id: string;
-  code: string;
-  customer_name: string;
-  last_status: string | null;
-};
-
 export default async function AdminDashboard() {
   const session = await requireAdmin();
 
@@ -56,67 +34,10 @@ export default async function AdminDashboard() {
   const monthEnd = monthEndDate.toISOString();
 
   const [summary, stalledSetting, shippingOverview, taxPendingOrders] = await Promise.all([
-    db
-      .prepare<DashboardSummaryRow>(
-        `
-        SELECT
-          COUNT(*) as total_orders,
-          COUNT(*) FILTER (WHERE status = 'DELIVERED') as delivered_orders,
-          COUNT(*) FILTER (WHERE status = 'AWAITING_PAYMENT') as awaiting_payment,
-          COUNT(*) FILTER (WHERE status = 'AWAITING_SUPPLIER') as awaiting_supplier,
-          COUNT(*) FILTER (WHERE status = 'PREPARING') as preparing,
-          COUNT(*) FILTER (WHERE status = 'SHIPPED') as shipped,
-          COUNT(*) FILTER (WHERE is_personal_use = 1) as personal_orders,
-          COALESCE(SUM(CASE WHEN is_personal_use = 0 AND created_at >= ? AND created_at < ? THEN total_amount ELSE 0 END), 0) as monthly_total_sales,
-          COALESCE((
-            SELECT SUM(amount)
-            FROM payments p
-            JOIN orders o2 ON o2.id = p.order_id
-            WHERE p.direction = 'OUTGOING'
-              AND o2.is_personal_use = 0
-              AND p.created_at >= ?
-              AND p.created_at < ?
-          ), 0) as monthly_total_paid_supplier
-        FROM orders
-        `,
-      )
-      .get(monthStart, monthEnd, monthStart, monthEnd),
+    getDashboardSummary({ monthStart, monthEnd }),
     getSetting("stalled_days"),
-    db
-      .prepare<{ without_tracking: number; shipping_with_tracking: number }>(
-        `
-        SELECT
-          COUNT(*) FILTER (
-            WHERE o.status IN ('AWAITING_SUPPLIER', 'PREPARING', 'SHIPPED')
-              AND (s.tracking_code IS NULL OR s.tracking_code = '')
-          ) as without_tracking,
-          COUNT(*) FILTER (
-            WHERE o.status IN ('AWAITING_SUPPLIER', 'PREPARING', 'SHIPPED')
-              AND s.tracking_code IS NOT NULL
-              AND s.tracking_code <> ''
-          ) as shipping_with_tracking
-        FROM orders o
-        LEFT JOIN shipments s ON s.order_id = o.id
-        `,
-      )
-      .get(),
-    db
-      .prepare<TaxPendingOrder>(
-        `
-        SELECT
-          o.id,
-          o.code,
-          c.name as customer_name,
-          s.last_status
-        FROM orders o
-        JOIN customers c ON c.id = o.customer_id
-        JOIN shipments s ON s.order_id = o.id
-        WHERE o.status IN ('PREPARING', 'SHIPPED')
-        ORDER BY o.updated_at DESC
-        LIMIT 40
-        `,
-      )
-      .all(),
+    getDashboardShippingOverview(),
+    listDashboardTaxPendingOrders(),
   ]);
 
   const totalOrders = Number(summary?.total_orders ?? 0);
@@ -129,8 +50,10 @@ export default async function AdminDashboard() {
 
   const monthlyTotalSales = Number(summary?.monthly_total_sales ?? 0);
   const monthlyPaidSupplier = Number(summary?.monthly_total_paid_supplier ?? 0);
-  const monthlyProfit = monthlyTotalSales - monthlyPaidSupplier;
-  const monthlyMargin = monthlyTotalSales ? (monthlyProfit / monthlyTotalSales) * 100 : 0;
+  const { profit: monthlyProfit, margin: monthlyMargin } = calculateMargin({
+    revenue: monthlyTotalSales,
+    cost: monthlyPaidSupplier,
+  });
 
   const stalledDays = stalledSetting ? Number(stalledSetting.value) : 7;
   const stalledOrders = await getStalledOrders(stalledDays);
@@ -140,11 +63,7 @@ export default async function AdminDashboard() {
     isTrackingTaxPending(order.last_status),
   );
 
-  const recentOrders = await db
-    .prepare<RecentOrder>(
-      "SELECT o.id, o.code, o.status, o.total_amount, o.updated_at, c.name as customer_name FROM orders o JOIN customers c ON c.id = o.customer_id ORDER BY o.created_at DESC LIMIT 6",
-    )
-    .all();
+  const recentOrders = await listDashboardRecentOrders();
 
   return (
     <Container className="space-y-8">

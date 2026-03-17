@@ -2,6 +2,12 @@
 
 import { useMemo, useState } from "react";
 
+import {
+  calculateOrderPricing,
+  calculatePackageCosts,
+  getDefaultPaymentPercent,
+} from "@/modules/shared/domain/calculators";
+import { PackageMode, PaymentType } from "@/modules/shared/domain/enums";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 type ProductOption = {
@@ -61,12 +67,6 @@ function formatPercent(value: number) {
   return value.toFixed(2);
 }
 
-function defaultPercentByPaymentType(paymentType: string) {
-  if (paymentType === "FULL") return 100;
-  if (paymentType === "DEPOSIT_50") return 50;
-  return 0;
-}
-
 const SHIRT_SIZES = ["PP", "P", "M", "G", "GG"];
 const fieldClassName =
   "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
@@ -77,6 +77,12 @@ const sectionCardClassName =
 const sectionTitleClassName = "text-lg font-semibold text-neutral-900";
 const helperBadgeClassName =
   "text-[0.65rem] uppercase tracking-[0.3em] text-neutral-500";
+
+function paymentTypeLabel(paymentType: PaymentType) {
+  if (paymentType === PaymentType.Full) return "Pagamento integral";
+  if (paymentType === PaymentType.Deposit50) return "Entrada de 50%";
+  return "Sem pagamento inicial";
+}
 
 export function NewOrderDetails({
   products,
@@ -105,18 +111,14 @@ export function NewOrderDetails({
   ]);
   const [nextQuickItemId, setNextQuickItemId] = useState(2);
   const [orderTotalInput, setOrderTotalInput] = useState("");
-  const [paymentType, setPaymentType] = useState("DEPOSIT_50");
+  const [paymentType, setPaymentType] = useState<PaymentType>(PaymentType.Deposit50);
   const [amountPaidPercentInput, setAmountPaidPercentInput] = useState("50.00");
   const [amountPaidInput, setAmountPaidInput] = useState("");
   const [syncSource, setSyncSource] = useState<"percent" | "amount">("percent");
   const [isPersonalUse, setIsPersonalUse] = useState(false);
   const [isStockOrder, setIsStockOrder] = useState(false);
 
-  const [packageMode, setPackageMode] = useState<
-    "new" | "existing" | "none" | "internal_stock"
-  >(
-    "new",
-  );
+  const [packageMode, setPackageMode] = useState<PackageMode>(PackageMode.New);
   const [existingPackageId, setExistingPackageId] = useState(packages[0]?.id ?? "");
   const [stockSourceOrderId, setStockSourceOrderId] = useState(
     internalStockOrders[0]?.id ?? "",
@@ -164,42 +166,29 @@ export function NewOrderDetails({
   }, [quickItems]);
 
   const effectiveUnitPrice = useMemo(() => {
-    const totalInput = parseNumber(orderTotalInput);
-    if (totalInput > 0 && quantityValue > 0) {
-      return totalInput / quantityValue;
-    }
-
-    if (productMode === "existing") {
-      return productPriceMap.get(productSlug) ?? 0;
-    }
-
-    return 0;
+    return calculateOrderPricing({
+      totalAmount: parseNumber(orderTotalInput),
+      fallbackUnitPrice: productMode === "existing" ? (productPriceMap.get(productSlug) ?? 0) : 0,
+      quantity: quantityValue,
+    }).unitPrice;
   }, [orderTotalInput, productMode, productPriceMap, productSlug, quantityValue]);
 
   const totalOrder = useMemo(() => {
-    const totalInput = parseNumber(orderTotalInput);
-    if (totalInput > 0) return totalInput;
-    return quantityValue * effectiveUnitPrice;
+    return calculateOrderPricing({
+      totalAmount: parseNumber(orderTotalInput),
+      fallbackUnitPrice: effectiveUnitPrice,
+      quantity: quantityValue,
+    }).total;
   }, [effectiveUnitPrice, orderTotalInput, quantityValue]);
 
   const packageSummary = useMemo(() => {
-    const packageQuantity = Math.max(
-      1,
-      Math.round(parseNumber(packageQuantityInput) || quantityValue),
-    );
-    const productCost = Math.max(0, parseNumber(productCostInput));
-    const extraFees = Math.max(0, parseNumber(extraFeesInput));
-    const internalShipping = Math.max(0, parseNumber(internalShippingInput));
-    const packageFinalCost = productCost + extraFees + internalShipping;
-    const averageUnitCost = packageFinalCost / packageQuantity;
-    const allocatedCost = averageUnitCost * quantityValue;
-
-    return {
-      packageQuantity,
-      packageFinalCost,
-      averageUnitCost,
-      allocatedCost,
-    };
+    return calculatePackageCosts({
+      packageQuantity: Math.max(1, Math.round(parseNumber(packageQuantityInput) || quantityValue)),
+      productCost: Math.max(0, parseNumber(productCostInput)),
+      extraFees: Math.max(0, parseNumber(extraFeesInput)),
+      internalShipping: Math.max(0, parseNumber(internalShippingInput)),
+      orderQuantity: quantityValue,
+    });
   }, [
     extraFeesInput,
     internalShippingInput,
@@ -214,7 +203,7 @@ export function NewOrderDetails({
   );
 
   const stockAllocationAvailable =
-    packageMode !== "internal_stock" ||
+    packageMode !== PackageMode.InternalStock ||
     (selectedInternalStockOrder !== null &&
       quantityValue > 0 &&
       selectedInternalStockOrder.availableQuantity >= quantityValue);
@@ -236,6 +225,76 @@ export function NewOrderDetails({
     };
   }, [amountPaidInput, amountPaidPercentInput, syncSource, totalOrder]);
 
+  const effectiveFlowSummary = useMemo(() => {
+    const orderType = isPersonalUse
+      ? "Uso pessoal"
+      : isStockOrder
+        ? "Entrada para estoque"
+        : "Pedido comercial";
+
+    const revenueMode = isPersonalUse
+      ? "Fora de faturamento e lucro"
+      : isStockOrder
+        ? "Sem venda registrada agora"
+        : `Faturamento ativo com ${paymentTypeLabel(paymentType)}`;
+
+    const packageModeLabel =
+      packageMode === PackageMode.New
+        ? "Novo pacote"
+        : packageMode === PackageMode.Existing
+          ? "Pacote existente"
+          : packageMode === PackageMode.InternalStock
+            ? "Baixa de estoque interno"
+            : "Sem pacote";
+
+    const packageDetail =
+      packageMode === PackageMode.New
+        ? supplierId
+          ? "Novo pacote com fornecedor selecionado"
+          : "Novo pacote sem fornecedor selecionado"
+        : packageMode === PackageMode.Existing
+          ? packages.find((item) => item.id === existingPackageId)?.code ?? "Pacote nao selecionado"
+          : packageMode === PackageMode.InternalStock
+            ? selectedInternalStockOrder
+              ? `${selectedInternalStockOrder.code} com saldo de ${selectedInternalStockOrder.availableQuantity} camisa(s)`
+              : "Origem de estoque nao selecionada"
+            : isPersonalUse
+              ? "Permitido para uso pessoal"
+              : "Pedido comercial sem pacote";
+
+    const primaryWarning =
+      entryMode === "quick" && quantityValue <= 0
+        ? "Adicione pelo menos uma camisa com quantidade valida."
+        : !stockAllocationAvailable
+          ? "A quantidade do pedido esta maior que o saldo disponivel no estoque interno."
+          : !isPersonalUse && !isStockOrder && totalOrder <= 0
+            ? "Informe o valor vendido total antes de criar o pedido."
+            : packageMode === PackageMode.None && !isPersonalUse
+              ? "Pedido comercial precisa de pacote ou baixa de estoque."
+              : null;
+
+    return {
+      orderType,
+      revenueMode,
+      packageModeLabel,
+      packageDetail,
+      primaryWarning,
+    };
+  }, [
+    existingPackageId,
+    isPersonalUse,
+    isStockOrder,
+    packageMode,
+    packages,
+    paymentType,
+    quantityValue,
+    selectedInternalStockOrder,
+    stockAllocationAvailable,
+    supplierId,
+    totalOrder,
+    entryMode,
+  ]);
+
   function syncAmountFromPercent(percentText: string) {
     setSyncSource("percent");
     setAmountPaidPercentInput(percentText);
@@ -247,8 +306,8 @@ export function NewOrderDetails({
   }
 
   function handlePaymentTypeChange(value: string) {
-    setPaymentType(value);
-    const defaultPercent = defaultPercentByPaymentType(value);
+    setPaymentType(value as PaymentType);
+    const defaultPercent = getDefaultPaymentPercent(value);
     setSyncSource("percent");
     setAmountPaidPercentInput(formatPercent(defaultPercent));
   }
@@ -579,9 +638,9 @@ export function NewOrderDetails({
                 onChange={(event) => handlePaymentTypeChange(event.target.value)}
                 className={fieldClassName}
               >
-                <option value="DEPOSIT_50">50% do valor</option>
-                <option value="FULL">100% do valor</option>
-                <option value="NONE">Apenas reserva</option>
+                <option value={PaymentType.Deposit50}>50% do valor</option>
+                <option value={PaymentType.Full}>100% do valor</option>
+                <option value={PaymentType.None}>Apenas reserva</option>
               </select>
               <input
                 name="amountPaidPercent"
@@ -604,7 +663,7 @@ export function NewOrderDetails({
             </>
           ) : (
             <>
-              <input type="hidden" name="paymentType" value="NONE" />
+              <input type="hidden" name="paymentType" value={PaymentType.None} />
               <input type="hidden" name="amountPaidPercent" value="0" />
               <input type="hidden" name="amountPaid" value="0" />
               <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
@@ -628,8 +687,8 @@ export function NewOrderDetails({
                 const checked = event.target.checked;
                 setIsPersonalUse(checked);
                 if (checked) setIsStockOrder(false);
-                if (checked && packageMode === "internal_stock") {
-                  setPackageMode("none");
+                if (checked && packageMode === PackageMode.InternalStock) {
+                  setPackageMode(PackageMode.None);
                 }
               }}
             />
@@ -644,8 +703,8 @@ export function NewOrderDetails({
                 const checked = event.target.checked;
                 setIsStockOrder(checked);
                 if (checked) setIsPersonalUse(false);
-                if (checked && packageMode === "internal_stock") {
-                  setPackageMode("new");
+                if (checked && packageMode === PackageMode.InternalStock) {
+                  setPackageMode(PackageMode.New);
                 }
               }}
             />
@@ -666,9 +725,9 @@ export function NewOrderDetails({
             <input
               type="radio"
               name="packageModeOption"
-              value="new"
-              checked={packageMode === "new"}
-              onChange={() => setPackageMode("new")}
+              value={PackageMode.New}
+              checked={packageMode === PackageMode.New}
+              onChange={() => setPackageMode(PackageMode.New)}
             />
             Criar novo pacote para este pedido
           </label>
@@ -676,9 +735,9 @@ export function NewOrderDetails({
             <input
               type="radio"
               name="packageModeOption"
-              value="existing"
-              checked={packageMode === "existing"}
-              onChange={() => setPackageMode("existing")}
+              value={PackageMode.Existing}
+              checked={packageMode === PackageMode.Existing}
+              onChange={() => setPackageMode(PackageMode.Existing)}
             />
             Vincular a pacote existente
           </label>
@@ -686,10 +745,10 @@ export function NewOrderDetails({
             <input
               type="radio"
               name="packageModeOption"
-              value="internal_stock"
-              checked={packageMode === "internal_stock"}
+              value={PackageMode.InternalStock}
+              checked={packageMode === PackageMode.InternalStock}
               onChange={() => {
-                setPackageMode("internal_stock");
+                setPackageMode(PackageMode.InternalStock);
                 setIsPersonalUse(false);
                 setIsStockOrder(false);
               }}
@@ -700,14 +759,14 @@ export function NewOrderDetails({
             <input
               type="radio"
               name="packageModeOption"
-              value="none"
-              checked={packageMode === "none"}
-              onChange={() => setPackageMode("none")}
+              value={PackageMode.None}
+              checked={packageMode === PackageMode.None}
+              onChange={() => setPackageMode(PackageMode.None)}
             />
             Sem pacote (pedido isolado)
           </label>
 
-          {packageMode === "internal_stock" && (
+          {packageMode === PackageMode.InternalStock && (
             <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
               {internalStockOrders.length === 0 ? (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
@@ -763,7 +822,7 @@ export function NewOrderDetails({
             </div>
           )}
 
-          {packageMode === "existing" && (
+          {packageMode === PackageMode.Existing && (
             <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
               <select
                 name="existingPackageId"
@@ -788,7 +847,7 @@ export function NewOrderDetails({
             </div>
           )}
 
-          {packageMode === "new" && (
+          {packageMode === PackageMode.New && (
             <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
               <select
                 name="supplierId"
@@ -912,6 +971,59 @@ export function NewOrderDetails({
             </div>
           )}
         </div>
+      </section>
+
+      <section className={sectionCardClassName}>
+        <div className="flex items-center justify-between">
+          <h2 className={sectionTitleClassName}>Resumo Final</h2>
+          <span className={helperBadgeClassName}>Checklist</span>
+        </div>
+        <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
+          <p>
+            Tipo efetivo do pedido:{" "}
+            <span className="font-semibold text-neutral-950">{effectiveFlowSummary.orderType}</span>
+          </p>
+          <p>
+            Regra financeira:{" "}
+            <span className="font-semibold text-neutral-950">{effectiveFlowSummary.revenueMode}</span>
+          </p>
+          <p>
+            Origem do custo:{" "}
+            <span className="font-semibold text-neutral-950">
+              {effectiveFlowSummary.packageModeLabel}
+            </span>
+          </p>
+          <p>
+            Fonte selecionada:{" "}
+            <span className="font-semibold text-neutral-950">
+              {effectiveFlowSummary.packageDetail}
+            </span>
+          </p>
+          <p>
+            Quantidade final: <span className="font-semibold text-neutral-950">{quantityValue}</span>
+            {" "}camisa(s)
+          </p>
+          <p>
+            Total previsto:{" "}
+            <span className="font-semibold text-neutral-950">R$ {formatMoney(totalOrder)}</span>
+          </p>
+          {!isPersonalUse && !isStockOrder && (
+            <p>
+              Valor de entrada:{" "}
+              <span className="font-semibold text-neutral-950">R$ {syncedPaid.amount}</span>
+              {" "}({syncedPaid.percent}%)
+            </p>
+          )}
+        </div>
+        {effectiveFlowSummary.primaryWarning ? (
+          <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            Revise antes de criar: {effectiveFlowSummary.primaryWarning}
+          </p>
+        ) : (
+          <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+            Fluxo consistente: o pedido esta pronto para ser criado com as regras acima.
+          </p>
+        )}
       </section>
 
       <div className="grid gap-3 sm:grid-cols-2">

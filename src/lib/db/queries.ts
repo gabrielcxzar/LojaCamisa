@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
 
+import {
+  calculateMargin,
+  calculatePackageAllocation,
+} from "@/modules/shared/domain/calculators";
+import { PaymentDirection } from "@/modules/shared/domain/enums";
 import { db } from "@/lib/db";
 import {
   mapTrackingStatusToOrderStatus,
@@ -785,7 +790,7 @@ export async function allocateInternalStockToSaleOrder(data: {
       .prepare(
         "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
       )
-      .run(data.saleOrderId, "OUTGOING", "Fornecedor");
+      .run(data.saleOrderId, PaymentDirection.Outgoing, "Fornecedor");
 
     return {
       sourceOrderCode: sourceOrder.code,
@@ -1234,7 +1239,7 @@ export async function createOrder(data: {
         .run(
           randomUUID(),
           orderId,
-          "INCOMING",
+          PaymentDirection.Incoming,
           safeAmountPaid,
           "Reserva online",
           nowIso,
@@ -1370,12 +1375,12 @@ export async function getMonthlyFinance(month: string) {
       .prepare<{ total: number }>(
         "SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE direction = ? AND created_at >= ? AND created_at < ?",
       )
-      .get("OUTGOING", start, end),
+      .get(PaymentDirection.Outgoing, start, end),
     db
       .prepare<{ total: number; count: number }>(
         "SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count FROM payments WHERE direction = ? AND created_at >= ? AND created_at < ?",
       )
-      .get("INCOMING", start, end),
+      .get(PaymentDirection.Incoming, start, end),
   ]);
 
   const totalSales = toNumber(salesRow?.total);
@@ -1383,8 +1388,10 @@ export async function getMonthlyFinance(month: string) {
   const totalIncoming = toNumber(incomingRow?.total);
   const incomingCount = toNumber(incomingRow?.count);
 
-  const profit = totalSales - totalPaidSupplier;
-  const margin = totalSales ? (profit / totalSales) * 100 : 0;
+  const { profit, margin } = calculateMargin({
+    revenue: totalSales,
+    cost: totalPaidSupplier,
+  });
 
   return {
     totalSales,
@@ -1518,7 +1525,7 @@ export async function upsertSupplierOrder(data: {
         .prepare<{ id: string }>(
           "SELECT id FROM payments WHERE order_id = ? AND direction = ? AND method = ? LIMIT 1",
         )
-        .get(data.orderId, "OUTGOING", "Fornecedor");
+        .get(data.orderId, PaymentDirection.Outgoing, "Fornecedor");
       if (!exists) {
         await db
           .prepare(
@@ -1527,7 +1534,7 @@ export async function upsertSupplierOrder(data: {
           .run(
             randomUUID(),
             data.orderId,
-            "OUTGOING",
+            PaymentDirection.Outgoing,
             data.totalCost,
             "Fornecedor",
             data.paidAt,
@@ -1545,7 +1552,7 @@ export async function upsertSupplierOrder(data: {
         .prepare(
           "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
         )
-        .run(data.orderId, "OUTGOING", "Fornecedor");
+        .run(data.orderId, PaymentDirection.Outgoing, "Fornecedor");
     }
   });
 
@@ -1573,25 +1580,23 @@ export async function recalculateImportPackageAllocations(packageId: string) {
   const packageProductCost = Number(importPackage.product_cost ?? 0);
   const packageExtraFees =
     Number(importPackage.extra_fees ?? 0) + Number(importPackage.internal_shipping ?? 0);
-  const packageFinalCost = packageProductCost + packageExtraFees;
-  const averageUnitCost = packageFinalCost / packageBaseQuantity;
-
   for (const linkedOrder of validLinkedOrders) {
-    const linkedQuantity = Number(linkedOrder.quantity);
-    const ratio = linkedQuantity / packageBaseQuantity;
-    const allocatedProductCost = packageProductCost * ratio;
-    const allocatedExtraFees = packageExtraFees * ratio;
-    const allocatedTotalCost = averageUnitCost * linkedQuantity;
+    const allocation = calculatePackageAllocation({
+      packageBaseQuantity,
+      productCost: packageProductCost,
+      extraFees: packageExtraFees,
+      linkedQuantity: Number(linkedOrder.quantity),
+    });
 
     if (importPackage.supplier_id) {
       await upsertSupplierOrder({
         orderId: linkedOrder.order_id,
         supplierId: importPackage.supplier_id,
-        productCost: allocatedProductCost,
-        extraFees: allocatedExtraFees,
+        productCost: allocation.allocatedProductCost,
+        extraFees: allocation.allocatedExtraFees,
         packageQuantity: packageBaseQuantity,
-        unitCost: averageUnitCost,
-        totalCost: allocatedTotalCost,
+        unitCost: allocation.averageUnitCost,
+        totalCost: allocation.allocatedTotalCost,
         paidAt: importPackage.paid_at ?? null,
       });
     }

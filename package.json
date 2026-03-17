@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --experimental-strip-types src/modules/shared/domain/calculators.test.ts && node --experimental-strip-types src/modules/shared/validation/order-forms.test.ts",
     "db:seed": "tsx scripts/seed.ts"
   },
   "dependencies": {

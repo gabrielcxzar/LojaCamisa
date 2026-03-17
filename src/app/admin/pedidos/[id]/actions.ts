@@ -2,6 +2,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  calculatePackageAllocation,
+  calculatePackageCosts,
+} from "@/modules/shared/domain/calculators";
+import { OrderStatus, PaymentDirection } from "@/modules/shared/domain/enums";
+import { parseUpdateOrderFinanceFormData } from "@/modules/shared/validation/order-forms";
+import {
   type CreateOrderItemInput,
   createOrder,
   deleteImportPackageIfOrphan,
@@ -22,12 +28,6 @@ import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/require-admin";
 import { registerShipmentTracking } from "@/lib/tracking";
 
-function parseNumber(value: FormDataEntryValue | null, fallback = 0) {
-  if (value === null || value === "") return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
 export async function updateOrderStatusAction(formData: FormData) {
   "use server";
 
@@ -37,14 +37,7 @@ export async function updateOrderStatusAction(formData: FormData) {
   const note = String(formData.get("note") ?? "");
 
   if (!orderId || !status) return;
-  const allowed = [
-    "AWAITING_PAYMENT",
-    "AWAITING_SUPPLIER",
-    "PREPARING",
-    "SHIPPED",
-    "DELIVERED",
-    "CANCELED",
-  ];
+  const allowed = Object.values(OrderStatus);
   if (!allowed.includes(status)) {
     throw new Error("Status invalido.");
   }
@@ -63,19 +56,25 @@ export async function updateSupplierInfo(formData: FormData) {
   "use server";
 
   const session = await requireAdmin();
-  const orderId = String(formData.get("orderId") ?? "");
-  const supplierId = String(formData.get("supplierId") ?? "");
-  const totalSold = parseNumber(formData.get("totalSold"), 0);
-  const isPersonalUseRaw = formData.get("isPersonalUse") ? 1 : 0;
-  const isStockOrderRaw = formData.get("isStockOrder") ? 1 : 0;
+  const parsed = parseUpdateOrderFinanceFormData(formData);
+  const {
+    orderId,
+    supplierId,
+    totalSold,
+    isPersonalUseRaw,
+    isStockOrderRaw,
+    legacyUnitCost,
+    legacyTotalCost,
+    packageQuantityInput,
+    productCostInput,
+    extraFeesInput,
+    paidAt,
+    hasPackageQuantityField,
+    hasProductCostField,
+    hasExtraFeesField,
+  } = parsed;
   const isPersonalUse = isPersonalUseRaw;
   const isStockOrder = isPersonalUseRaw ? 0 : isStockOrderRaw;
-  const legacyUnitCost = parseNumber(formData.get("unitCost"), 0);
-  const legacyTotalCost = parseNumber(formData.get("totalCost"), 0);
-  const packageQuantityInput = parseNumber(formData.get("packageQuantity"), 0);
-  const productCostInput = parseNumber(formData.get("productCost"), 0);
-  const extraFeesInput = parseNumber(formData.get("extraFees"), 0);
-  const paidAt = String(formData.get("paidAt") ?? "");
 
   if (!orderId) return;
 
@@ -127,7 +126,7 @@ export async function updateSupplierInfo(formData: FormData) {
         .prepare(
           "DELETE FROM payments WHERE order_id = ? AND direction = ? AND method = ?",
         )
-        .run(orderId, "OUTGOING", "Fornecedor");
+        .run(orderId, PaymentDirection.Outgoing, "Fornecedor");
 
       await logAction({
         userEmail: session.user.email ?? "admin",
@@ -211,10 +210,7 @@ export async function updateSupplierInfo(formData: FormData) {
       throw new Error("Pedido sem quantidade valida para calcular custo medio.");
     }
 
-    const hasPackageData =
-      formData.get("packageQuantity") !== null ||
-      formData.get("productCost") !== null ||
-      formData.get("extraFees") !== null;
+    const hasPackageData = hasPackageQuantityField || hasProductCostField || hasExtraFeesField;
 
     let packageQuantity = orderQuantity;
     let productCost = legacyTotalCost;
@@ -227,9 +223,14 @@ export async function updateSupplierInfo(formData: FormData) {
       productCost = productCostInput;
       extraFees = extraFeesInput;
 
-      const packageFinalCost = productCost + extraFees;
-      unitCost = packageFinalCost / packageQuantity;
-      totalCost = unitCost * orderQuantity;
+      const packageCosts = calculatePackageCosts({
+        packageQuantity,
+        productCost,
+        extraFees,
+        orderQuantity,
+      });
+      unitCost = packageCosts.averageUnitCost;
+      totalCost = packageCosts.allocatedCost;
     } else if (unitCost <= 0 && totalCost > 0) {
       unitCost = totalCost / orderQuantity;
       packageQuantity = orderQuantity;
@@ -265,24 +266,22 @@ export async function updateSupplierInfo(formData: FormData) {
           1,
           Math.round(packageQuantityInput || linkedTotalQuantity),
         );
-        const packageFinalCost = productCostInput + extraFeesInput;
-        const averageUnitCost = packageFinalCost / packageBaseQuantity;
-
         for (const linkedOrder of validLinkedOrders) {
-          const linkedQuantity = Number(linkedOrder.quantity);
-          const ratio = linkedQuantity / packageBaseQuantity;
-          const allocatedProductCost = productCostInput * ratio;
-          const allocatedExtraFees = extraFeesInput * ratio;
-          const allocatedTotalCost = averageUnitCost * linkedQuantity;
+          const allocation = calculatePackageAllocation({
+            packageBaseQuantity,
+            productCost: productCostInput,
+            extraFees: extraFeesInput,
+            linkedQuantity: Number(linkedOrder.quantity),
+          });
 
           await upsertSupplierOrder({
             orderId: linkedOrder.order_id,
             supplierId,
-            productCost: allocatedProductCost,
-            extraFees: allocatedExtraFees,
+            productCost: allocation.allocatedProductCost,
+            extraFees: allocation.allocatedExtraFees,
             packageQuantity: packageBaseQuantity,
-            unitCost: averageUnitCost,
-            totalCost: allocatedTotalCost,
+            unitCost: allocation.averageUnitCost,
+            totalCost: allocation.allocatedTotalCost,
             paidAt: linkedOrder.order_id === orderId ? paidAt || null : null,
           });
 

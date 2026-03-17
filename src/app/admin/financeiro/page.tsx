@@ -1,42 +1,20 @@
 export const dynamic = "force-dynamic";
 
+import {
+  getFinanceSummary,
+  listFinanceRecentPayments,
+  listFinanceSettings,
+  listFinanceStatusCounts,
+} from "@/modules/finance/infrastructure/finance-read-repository";
+import { calculateMargin } from "@/modules/shared/domain/calculators";
+import { PaymentDirection } from "@/modules/shared/domain/enums";
 import { Container } from "@/components/layout/container";
 import { Badge } from "@/components/ui/badge";
-import { db } from "@/lib/db";
 import { requireAdmin } from "@/lib/require-admin";
 
 function formatCurrency(value: number) {
   return `R$ ${value.toFixed(2)}`;
 }
-
-type StatusCount = {
-  status: string;
-  count: number;
-};
-
-type RecentPayment = {
-  id: string;
-  direction: string;
-  amount: number;
-  created_at: string;
-  order_code: string;
-};
-
-type FinanceSummaryRow = {
-  total_sales: number;
-  total_received: number;
-  total_paid_supplier: number;
-  incoming_count: number;
-  monthly_total_sales: number;
-  monthly_total_paid_supplier: number;
-  monthly_total_incoming: number;
-  monthly_incoming_count: number;
-};
-
-type SettingRow = {
-  key: string;
-  value: string;
-};
 
 export default async function FinanceiroPage() {
   await requireAdmin();
@@ -48,86 +26,10 @@ export default async function FinanceiroPage() {
   const monthEnd = monthEndDate.toISOString();
 
   const [summary, statusCounts, recentPayments, settingRows] = await Promise.all([
-    db
-      .prepare<FinanceSummaryRow>(
-        `
-        SELECT
-          COALESCE(SUM(CASE WHEN o.is_personal_use = 0 THEN o.total_amount ELSE 0 END), 0) as total_sales,
-          COALESCE((
-            SELECT SUM(p.amount)
-            FROM payments p
-            JOIN orders o2 ON o2.id = p.order_id
-            WHERE p.direction = 'INCOMING'
-              AND o2.is_personal_use = 0
-          ), 0) as total_received,
-          COALESCE((
-            SELECT SUM(p.amount)
-            FROM payments p
-            JOIN orders o2 ON o2.id = p.order_id
-            WHERE p.direction = 'OUTGOING'
-              AND o2.is_personal_use = 0
-          ), 0) as total_paid_supplier,
-          COALESCE((
-            SELECT COUNT(*)
-            FROM payments p
-            JOIN orders o2 ON o2.id = p.order_id
-            WHERE p.direction = 'INCOMING'
-              AND o2.is_personal_use = 0
-          ), 0) as incoming_count,
-          COALESCE(SUM(CASE WHEN o.is_personal_use = 0 AND o.created_at >= ? AND o.created_at < ? THEN o.total_amount ELSE 0 END), 0) as monthly_total_sales,
-          COALESCE((
-            SELECT SUM(p.amount)
-            FROM payments p
-            JOIN orders o2 ON o2.id = p.order_id
-            WHERE p.direction = 'OUTGOING'
-              AND o2.is_personal_use = 0
-              AND p.created_at >= ?
-              AND p.created_at < ?
-          ), 0) as monthly_total_paid_supplier,
-          COALESCE((
-            SELECT SUM(p.amount)
-            FROM payments p
-            JOIN orders o2 ON o2.id = p.order_id
-            WHERE p.direction = 'INCOMING'
-              AND o2.is_personal_use = 0
-              AND p.created_at >= ?
-              AND p.created_at < ?
-          ), 0) as monthly_total_incoming,
-          COALESCE((
-            SELECT COUNT(*)
-            FROM payments p
-            JOIN orders o2 ON o2.id = p.order_id
-            WHERE p.direction = 'INCOMING'
-              AND o2.is_personal_use = 0
-              AND p.created_at >= ?
-              AND p.created_at < ?
-          ), 0) as monthly_incoming_count
-        FROM orders o
-        `,
-      )
-      .get(
-        monthStart,
-        monthEnd,
-        monthStart,
-        monthEnd,
-        monthStart,
-        monthEnd,
-        monthStart,
-        monthEnd,
-      ),
-    db
-      .prepare<StatusCount>("SELECT status, COUNT(*) as count FROM orders GROUP BY status")
-      .all(),
-    db
-      .prepare<RecentPayment>(
-        "SELECT p.id, p.direction, p.amount, p.created_at, o.code as order_code FROM payments p JOIN orders o ON o.id = p.order_id ORDER BY p.created_at DESC LIMIT 8",
-      )
-      .all(),
-    db
-      .prepare<SettingRow>(
-        "SELECT key, value FROM settings WHERE key IN ('payment_fee_percent', 'payment_fee_fixed')",
-      )
-      .all(),
+    getFinanceSummary({ monthStart, monthEnd }),
+    listFinanceStatusCounts(),
+    listFinanceRecentPayments(),
+    listFinanceSettings(),
   ]);
 
   const settings = Object.fromEntries(settingRows.map((item) => [item.key, item.value]));
@@ -138,8 +40,10 @@ export default async function FinanceiroPage() {
   const incomingCount = Number(summary?.incoming_count ?? 0);
   const totalPending = totalSales - totalReceived;
 
-  const profit = totalSales - totalPaidSupplier;
-  const margin = totalSales ? (profit / totalSales) * 100 : 0;
+  const { profit, margin } = calculateMargin({
+    revenue: totalSales,
+    cost: totalPaidSupplier,
+  });
 
   const feePercent = Number(settings.payment_fee_percent ?? 0);
   const feeFixed = Number(settings.payment_fee_fixed ?? 0);
@@ -150,8 +54,10 @@ export default async function FinanceiroPage() {
   const monthlyPaidSupplier = Number(summary?.monthly_total_paid_supplier ?? 0);
   const monthlyTotalIncoming = Number(summary?.monthly_total_incoming ?? 0);
   const monthlyIncomingCount = Number(summary?.monthly_incoming_count ?? 0);
-  const monthlyProfit = monthlyTotalSales - monthlyPaidSupplier;
-  const monthlyMargin = monthlyTotalSales ? (monthlyProfit / monthlyTotalSales) * 100 : 0;
+  const { profit: monthlyProfit, margin: monthlyMargin } = calculateMargin({
+    revenue: monthlyTotalSales,
+    cost: monthlyPaidSupplier,
+  });
   const monthlyEstimatedFees =
     monthlyTotalIncoming * (feePercent / 100) + monthlyIncomingCount * feeFixed;
   const monthlyProfitAfterFees = monthlyProfit - monthlyEstimatedFees;
@@ -252,7 +158,7 @@ export default async function FinanceiroPage() {
             >
               <div>
                 <p className="font-semibold">
-                  {payment.direction === "INCOMING" ? "Recebido" : "Pago"} -{" "}
+                  {payment.direction === PaymentDirection.Incoming ? "Recebido" : "Pago"} -{" "}
                   {payment.order_code}
                 </p>
                 <p className="text-xs text-neutral-500">
