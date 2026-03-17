@@ -56,7 +56,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           Novo pedido
         </Link>
       </div>
-      <form className="grid gap-4 rounded-2xl border border-neutral-200 bg-white p-6 md:grid-cols-4">
+      <form className="grid gap-4 rounded-2xl border border-neutral-200 bg-white p-6 shadow-lg md:grid-cols-4">
         <input
           name="q"
           placeholder="Buscar por cliente"
@@ -92,7 +92,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           Aplicar filtros
         </button>
       </form>
-      <div className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-6">
+      <div className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-6 shadow-lg">
         {orders.length === 0 && (
           <p className="text-sm text-neutral-500">
             Nenhum pedido encontrado.
@@ -102,7 +102,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           <Link
             key={order.id}
             href={`/admin/pedidos/${order.id}`}
-            className="flex items-center justify-between rounded-2xl border border-neutral-200 px-4 py-3 text-sm hover:border-neutral-400"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 px-4 py-3 text-sm transition hover:border-neutral-400 hover:bg-neutral-50"
           >
             <div>
               <p className="font-semibold">

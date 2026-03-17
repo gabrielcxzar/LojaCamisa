@@ -72,6 +72,11 @@ const fieldClassName =
   "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 const compactFieldClassName =
   "w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+const sectionCardClassName =
+  "rounded-3xl border border-neutral-200 bg-white/90 p-6 shadow-sm shadow-neutral-100";
+const sectionTitleClassName = "text-lg font-semibold text-neutral-900";
+const helperBadgeClassName =
+  "text-[0.65rem] uppercase tracking-[0.3em] text-neutral-500";
 
 export function NewOrderDetails({
   products,
@@ -311,8 +316,11 @@ export function NewOrderDetails({
   return (
     <div className="space-y-8">
       <input type="hidden" name="entryMode" value={entryMode} />
-      <section>
-        <h2 className="text-lg font-semibold">Modo de cadastro</h2>
+      <section className={sectionCardClassName}>
+        <div className="flex items-center justify-between">
+          <h2 className={sectionTitleClassName}>Modo de cadastro</h2>
+          <span className={helperBadgeClassName}>Entrada</span>
+        </div>
         <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 sm:grid-cols-2">
           <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2">
             <input
@@ -336,8 +344,11 @@ export function NewOrderDetails({
         </div>
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Camisa</h2>
+      <section className={sectionCardClassName}>
+        <div className="flex items-center justify-between">
+          <h2 className={sectionTitleClassName}>Camisa</h2>
+          <span className={helperBadgeClassName}>Produto</span>
+        </div>
         <input
           type="hidden"
           name="productMode"
@@ -494,8 +505,11 @@ export function NewOrderDetails({
         )}
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Pedido</h2>
+      <section className={sectionCardClassName}>
+        <div className="flex items-center justify-between">
+          <h2 className={sectionTitleClassName}>Pedido</h2>
+          <span className={helperBadgeClassName}>Resumo</span>
+        </div>
         <div className="mt-4 grid gap-4">
           {entryMode === "quick" ? (
             <>
@@ -543,13 +557,20 @@ export function NewOrderDetails({
           />
           <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
           <input type="hidden" name="amountPaidSource" value={syncSource} />
-          <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-            Valor vendido total:{" "}
-            <span className="font-semibold">R$ {formatMoney(totalOrder)}</span>
-            <br />
-            Valor medio por camisa:{" "}
-            <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
-          </p>
+          <div className="grid gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-600">
+            <p>
+              Valor vendido total:{" "}
+              <span className="font-semibold">R$ {formatMoney(totalOrder)}</span>
+            </p>
+            <p>
+              Valor medio por camisa:{" "}
+              <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
+            </p>
+            <p>
+              Quantidade calculada:{" "}
+              <span className="font-semibold">{quantityValue}</span>
+            </p>
+          </div>
           {!isPersonalUse && !isStockOrder ? (
             <>
               <select
@@ -633,12 +654,15 @@ export function NewOrderDetails({
         </div>
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Pacote de importacao</h2>
+      <section className={sectionCardClassName}>
+        <div className="flex items-center justify-between">
+          <h2 className={sectionTitleClassName}>Pacote de importacao</h2>
+          <span className={helperBadgeClassName}>Logistica</span>
+        </div>
         <div className="mt-4 space-y-4">
           <input type="hidden" name="packageMode" value={packageMode} />
           <input type="hidden" name="stockSourceOrderId" value={stockSourceOrderId} />
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
@@ -648,7 +672,7 @@ export function NewOrderDetails({
             />
             Criar novo pacote para este pedido
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
@@ -658,7 +682,7 @@ export function NewOrderDetails({
             />
             Vincular a pacote existente
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
@@ -672,7 +696,7 @@ export function NewOrderDetails({
             />
             Baixar do estoque interno
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"

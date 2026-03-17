@@ -16,12 +16,7 @@ import {
   shouldAdvanceOrderStatus,
 } from "@/lib/tracking/status-map";
 import { consumeRateLimit, getClientIp } from "@/lib/security/rate-limit";
-
-function toPositiveInt(input: string | undefined, fallback: number) {
-  const value = Number(input);
-  if (!Number.isFinite(value) || value <= 0) return fallback;
-  return Math.floor(value);
-}
+import { toPositiveInt } from "@/lib/tracking/helpers";
 
 async function resolveActorEmail(request: Request) {
   const session = await getServerSession(authOptions);

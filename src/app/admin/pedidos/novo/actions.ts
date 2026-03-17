@@ -25,87 +25,162 @@ function normalizeText(value: FormDataEntryValue | null | undefined) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export async function createOrderManual(formData: FormData) {
-  "use server";
+type QuickItemRow = {
+  team: string;
+  model: string;
+  description: string;
+  size: string;
+  quantity: number;
+};
 
-  const session = await requireAdmin();
-  const entryMode = String(formData.get("entryMode") ?? "quick").trim();
-  const productMode = String(formData.get("productMode") ?? "custom");
-  const productSlug = String(formData.get("productSlug") ?? "").trim();
-  const customName = String(formData.get("customName") ?? "").trim();
-  const customTeam = String(formData.get("customTeam") ?? "").trim();
-  const customModel = String(formData.get("customModel") ?? "").trim();
-  const customDescription = String(formData.get("customDescription") ?? "").trim();
+function readFormString(formData: FormData, key: string, fallback = "") {
+  return String(formData.get(key) ?? fallback).trim();
+}
 
-  const size = String(formData.get("size") ?? "").trim();
-  const quantity = normalizeNumber(formData.get("quantity"), 1);
-  const orderTotalInput = normalizeNumber(formData.get("orderTotal"), 0);
-  const unitPriceInput = normalizeNumber(formData.get("unitPrice"), 0);
-  const paymentType = String(formData.get("paymentType") ?? "NONE");
-  const amountPaidInput = normalizeNumber(formData.get("amountPaid"), -1);
-  const amountPaidPercentInput = normalizeNumber(formData.get("amountPaidPercent"), -1);
-  const amountPaidSource = String(formData.get("amountPaidSource") ?? "").trim();
-  const afterSubmit = String(formData.get("afterSubmit") ?? "open").trim();
-  const notes = String(formData.get("notes") ?? "").trim();
-  const isPersonalUseRaw = formData.get("isPersonalUse") ? 1 : 0;
-  const isStockOrderRaw = formData.get("isStockOrder") ? 1 : 0;
-  const isPersonalUse = isPersonalUseRaw;
-  const isStockOrder = isPersonalUseRaw ? 0 : isStockOrderRaw;
+function readFormNumberField(formData: FormData, key: string, fallback = 0) {
+  return normalizeNumber(formData.get(key), fallback);
+}
 
-  const packageMode = String(formData.get("packageMode") ?? "new").trim();
-  const existingPackageId = String(formData.get("existingPackageId") ?? "").trim();
-  const stockSourceOrderId = String(formData.get("stockSourceOrderId") ?? "").trim();
-  const supplierId = String(formData.get("supplierId") ?? "").trim();
-  const packageQuantityInput = normalizeNumber(formData.get("packageQuantity"), 0);
-  const productCostInput = normalizeNumber(formData.get("productCost"), 0);
-  const extraFeesInput = normalizeNumber(formData.get("extraFees"), 0);
-  const internalShippingInput = normalizeNumber(formData.get("internalShipping"), 0);
-  const paidAt = String(formData.get("paidAt") ?? "").trim();
-  const packageNotes = String(formData.get("packageNotes") ?? "").trim();
+function readFormCheckbox(formData: FormData, key: string) {
+  return formData.get(key) !== null;
+}
 
-  const trackingCode = String(formData.get("trackingCode") ?? "").trim();
-  const carrier = String(formData.get("carrier") ?? "").trim();
-  const originCountry = String(formData.get("originCountry") ?? "China").trim();
-
-  const name = String(formData.get("name") ?? "").trim();
-  const emailInput = String(formData.get("email") ?? "").trim().toLowerCase();
-  const phone = String(formData.get("phone") ?? "").trim();
-  const line1 = String(formData.get("line1") ?? "").trim();
-  const line2 = String(formData.get("line2") ?? "").trim();
-  const city = String(formData.get("city") ?? "").trim();
-  const state = String(formData.get("state") ?? "").trim();
-  const postalCode = String(formData.get("postalCode") ?? "").trim();
-  const country = String(formData.get("country") ?? "Brasil").trim();
+function collectQuickItems(formData: FormData): QuickItemRow[] {
   const quickTeams = formData.getAll("quickItemTeam");
   const quickModels = formData.getAll("quickItemModel");
   const quickDescriptions = formData.getAll("quickItemDescription");
   const quickSizes = formData.getAll("quickItemSize");
   const quickQuantities = formData.getAll("quickItemQuantity");
-
-  const email = emailInput || `cliente-${Date.now()}@local.invalid`;
-
-  const quickRowsCount = Math.max(
+  const rows = Math.max(
     quickTeams.length,
     quickModels.length,
     quickDescriptions.length,
     quickSizes.length,
     quickQuantities.length,
   );
-  const quickItems = Array.from({ length: quickRowsCount }, (_, index) => {
+
+  return Array.from({ length: rows }, (_, index) => {
     const team = normalizeText(quickTeams[index]);
     const model = normalizeText(quickModels[index]);
     const description = normalizeText(quickDescriptions[index]);
-    const itemSize = normalizeText(quickSizes[index]) || "M";
-    const itemQty = normalizeNumber(quickQuantities[index] ?? null, 1);
+    const size = normalizeText(quickSizes[index]) || "M";
+    const quantity = normalizeNumber(quickQuantities[index] ?? null, 1);
 
     return {
       team,
       model,
       description,
-      size: itemSize,
-      quantity: itemQty > 0 ? itemQty : 0,
+      size,
+      quantity: quantity > 0 ? quantity : 0,
     };
   }).filter((item) => item.quantity > 0 && Boolean(item.team || item.model || item.description));
+}
+
+function buildItemsWithPrice(items: CreateOrderItemInput[], distributedUnitPrice: number) {
+  return items.map((item) => {
+    const quantity = item.quantity > 0 ? item.quantity : 1;
+    const unitPrice = distributedUnitPrice;
+    return {
+      ...item,
+      quantity,
+      unitPrice,
+      totalPrice: unitPrice * quantity,
+    };
+  });
+}
+
+type AmountPaidParams = {
+  paymentType: string;
+  total: number;
+  amountPaidInput: number;
+  amountPaidPercentInput: number;
+  amountPaidSource: string;
+  isStockOrder: number;
+};
+
+function determineAmountPaid({
+  paymentType,
+  total,
+  amountPaidInput,
+  amountPaidPercentInput,
+  amountPaidSource,
+  isStockOrder,
+}: AmountPaidParams) {
+  let amountPaid =
+    paymentType === "FULL" ? total : paymentType === "DEPOSIT_50" ? total * 0.5 : 0;
+  if (isStockOrder) {
+    amountPaid = 0;
+  }
+  if (amountPaidSource === "percent" && amountPaidPercentInput >= 0) {
+    amountPaid = total * (amountPaidPercentInput / 100);
+  } else if (amountPaidInput >= 0) {
+    amountPaid = amountPaidInput;
+  } else if (amountPaidPercentInput >= 0) {
+    amountPaid = total * (amountPaidPercentInput / 100);
+  }
+  if (isStockOrder) {
+    amountPaid = 0;
+  }
+  if (amountPaid < 0) {
+    throw new Error("Valor pago invalido.");
+  }
+  return amountPaid;
+}
+
+export async function createOrderManual(formData: FormData) {
+  "use server";
+
+  const session = await requireAdmin();
+  const entryMode = readFormString(formData, "entryMode", "quick") as "quick" | "advanced";
+  const productMode = readFormString(formData, "productMode", "custom") as "custom" | "existing";
+  const productSlug = readFormString(formData, "productSlug");
+  const customName = readFormString(formData, "customName");
+  const customTeam = readFormString(formData, "customTeam");
+  const customModel = readFormString(formData, "customModel");
+  const customDescription = readFormString(formData, "customDescription");
+
+  const size = readFormString(formData, "size");
+  const quantity = readFormNumberField(formData, "quantity", 1);
+  const orderTotalInput = readFormNumberField(formData, "orderTotal", 0);
+  const unitPriceInput = readFormNumberField(formData, "unitPrice", 0);
+  const paymentType = readFormString(formData, "paymentType", "NONE");
+  const amountPaidInput = readFormNumberField(formData, "amountPaid", -1);
+  const amountPaidPercentInput = readFormNumberField(formData, "amountPaidPercent", -1);
+  const amountPaidSource = readFormString(formData, "amountPaidSource");
+  const afterSubmit = readFormString(formData, "afterSubmit", "open");
+  const notes = readFormString(formData, "notes");
+  const isPersonalUseRaw = readFormCheckbox(formData, "isPersonalUse") ? 1 : 0;
+  const isStockOrderRaw = readFormCheckbox(formData, "isStockOrder") ? 1 : 0;
+  const isPersonalUse = isPersonalUseRaw;
+  const isStockOrder = isPersonalUseRaw ? 0 : isStockOrderRaw;
+
+  const packageMode = readFormString(formData, "packageMode", "new");
+  const existingPackageId = readFormString(formData, "existingPackageId");
+  const stockSourceOrderId = readFormString(formData, "stockSourceOrderId");
+  const supplierId = readFormString(formData, "supplierId");
+  const packageQuantityInput = readFormNumberField(formData, "packageQuantity", 0);
+  const productCostInput = readFormNumberField(formData, "productCost", 0);
+  const extraFeesInput = readFormNumberField(formData, "extraFees", 0);
+  const internalShippingInput = readFormNumberField(formData, "internalShipping", 0);
+  const paidAt = readFormString(formData, "paidAt");
+  const packageNotes = readFormString(formData, "packageNotes");
+
+  const trackingCode = readFormString(formData, "trackingCode");
+  const carrier = readFormString(formData, "carrier");
+  const originCountry = readFormString(formData, "originCountry", "China");
+
+  const name = readFormString(formData, "name");
+  const emailInput = readFormString(formData, "email").toLowerCase();
+  const phone = readFormString(formData, "phone");
+  const line1 = readFormString(formData, "line1");
+  const line2 = readFormString(formData, "line2");
+  const city = readFormString(formData, "city");
+  const state = readFormString(formData, "state");
+  const postalCode = readFormString(formData, "postalCode");
+  const country = readFormString(formData, "country", "Brasil");
+
+  const email = emailInput || `cliente-${Date.now()}@local.invalid`;
+  const quickItems = collectQuickItems(formData);
   const isQuickMultiItem = entryMode === "quick" && quickItems.length > 0;
 
   if (!name || !line1 || !city || !state || (!isQuickMultiItem && !size)) {
@@ -225,12 +300,7 @@ export async function createOrderManual(formData: FormData) {
 
   const distributedUnitPrice =
     orderTotalInput > 0 ? orderTotalInput / totalQuantity : finalUnitPrice;
-  const itemsWithPrice = items.map((item) => ({
-    ...item,
-    quantity: item.quantity > 0 ? item.quantity : 1,
-    unitPrice: distributedUnitPrice,
-    totalPrice: distributedUnitPrice * (item.quantity > 0 ? item.quantity : 1),
-  }));
+  const itemsWithPrice = buildItemsWithPrice(items, distributedUnitPrice);
 
   let total =
     orderTotalInput > 0
@@ -276,25 +346,14 @@ export async function createOrderManual(formData: FormData) {
     throw new Error("Selecione um pacote existente.");
   }
 
-  let amountPaid =
-    paymentType === "FULL" ? total : paymentType === "DEPOSIT_50" ? total * 0.5 : 0;
-  if (isStockOrder) {
-    amountPaid = 0;
-  }
-  if (amountPaidSource === "percent" && amountPaidPercentInput >= 0) {
-    amountPaid = total * (amountPaidPercentInput / 100);
-  } else if (amountPaidInput >= 0) {
-    amountPaid = amountPaidInput;
-  } else if (amountPaidPercentInput >= 0) {
-    amountPaid = total * (amountPaidPercentInput / 100);
-  }
-  if (isStockOrder) {
-    amountPaid = 0;
-  }
-
-  if (amountPaid < 0) {
-    throw new Error("Valor pago invalido.");
-  }
+  const amountPaid = determineAmountPaid({
+    paymentType,
+    total,
+    amountPaidInput,
+    amountPaidPercentInput,
+    amountPaidSource,
+    isStockOrder,
+  });
 
   const { orderId } = await createOrder({
     items: itemsWithPrice,
