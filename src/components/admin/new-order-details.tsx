@@ -59,6 +59,10 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function sanitizeNumericInput(value: string) {
+  return value.replace(/\D/g, "");
+}
+
 function formatMoney(value: number) {
   return value.toFixed(2);
 }
@@ -458,11 +462,16 @@ export function NewOrderDetails({
                         {shirtSize}
                       </span>
                       <input
-                        type="number"
-                        min={0}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
                         value={item.sizeQuantities[shirtSize] ?? ""}
                         onChange={(event) =>
-                          updateQuickItemSize(item.id, shirtSize, event.target.value)
+                          updateQuickItemSize(
+                            item.id,
+                            shirtSize,
+                            sanitizeNumericInput(event.target.value),
+                          )
                         }
                         className={`${compactFieldClassName} text-center`}
                       />
