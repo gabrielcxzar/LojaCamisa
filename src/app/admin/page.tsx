@@ -159,6 +159,7 @@ export default async function AdminDashboard() {
             <Link
               key={order.id}
               href={`/admin/pedidos/${order.id}`}
+              prefetch={false}
               className="flex items-center justify-between rounded-2xl border border-neutral-200 px-4 py-3 text-sm hover:border-neutral-400"
             >
               <div>
@@ -192,6 +193,7 @@ export default async function AdminDashboard() {
             <Link
               key={order.id}
               href={`/admin/pedidos/${order.id}`}
+              prefetch={false}
               className="flex items-center justify-between rounded-2xl border border-neutral-200 px-4 py-3 text-sm hover:border-neutral-400"
             >
               <div>
@@ -241,6 +243,7 @@ export default async function AdminDashboard() {
             <Link
               key={order.id}
               href={`/admin/pedidos/${order.id}`}
+              prefetch={false}
               className="flex items-center justify-between rounded-xl border border-neutral-200 px-4 py-3 text-sm hover:border-neutral-400"
             >
               <div>

@@ -405,6 +405,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                       <Link
                         key={linkedOrder.order_id}
                         href={`/admin/pedidos/${linkedOrder.order_id}`}
+                        prefetch={false}
                         className={`block rounded-lg border px-3 py-2 transition hover:border-neutral-400 ${
                           isCurrent
                             ? "border-neutral-300 bg-white"
@@ -439,6 +440,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                   Pedido origem:{" "}
                   <Link
                     href={`/admin/pedidos/${internalStockAllocation.source_order_id}`}
+                    prefetch={false}
                     className="font-semibold text-neutral-900 underline underline-offset-4"
                   >
                     {internalStockAllocation.source_order_code}

@@ -100,6 +100,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           <Link
             key={order.id}
             href={`/admin/pedidos/${order.id}`}
+            prefetch={false}
             className="block w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm transition hover:border-neutral-400 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           >
             <div className="pointer-events-none grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
