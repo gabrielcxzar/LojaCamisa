@@ -73,14 +73,16 @@ function formatPercent(value: number) {
 
 const SHIRT_SIZES = ["PP", "P", "M", "G", "GG"];
 const fieldClassName =
-  "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+  "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 const compactFieldClassName =
   "w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 const sectionCardClassName =
-  "rounded-3xl border border-neutral-200 bg-white/90 p-6 shadow-sm shadow-neutral-100";
+  "rounded-3xl border border-neutral-200 bg-white/90 p-5 shadow-sm shadow-neutral-100";
 const sectionTitleClassName = "text-lg font-semibold text-neutral-900";
 const helperBadgeClassName =
   "text-[0.65rem] uppercase tracking-[0.3em] text-neutral-500";
+const summaryStatCardClassName =
+  "rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600";
 
 function paymentTypeLabel(paymentType: PaymentType) {
   if (paymentType === PaymentType.Full) return "Pagamento integral";
@@ -377,7 +379,7 @@ export function NewOrderDetails({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       <input type="hidden" name="entryMode" value={entryMode} />
       <section className={sectionCardClassName}>
         <div className="flex items-center justify-between">
@@ -407,192 +409,211 @@ export function NewOrderDetails({
         </div>
       </section>
 
-      <section className={sectionCardClassName}>
-        <div className="flex items-center justify-between">
-          <h2 className={sectionTitleClassName}>Camisa</h2>
-          <span className={helperBadgeClassName}>Produto</span>
-        </div>
-        <input
-          type="hidden"
-          name="productMode"
-          value={entryMode === "quick" ? "custom" : productMode}
-        />
-
-        {entryMode === "quick" ? (
-          <div className="mt-4 space-y-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
-            <input type="hidden" name="customName" value="Camisa de time sob encomenda" />
-            {quickItems.map((item, index) => (
-              <div
-                key={item.id}
-                className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-500">
-                    Modelo {index + 1}
-                  </p>
-                  {quickItems.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeQuickItem(item.id)}
-                      className="text-xs font-semibold text-red-600 hover:text-red-700"
-                    >
-                      Remover
-                    </button>
-                  )}
-                </div>
-                <input
-                  placeholder="Time (ex: Vitoria)"
-                  value={item.team}
-                  onChange={(event) => updateQuickItem(item.id, "team", event.target.value)}
-                  className={fieldClassName}
-                />
-                <input
-                  placeholder="Modelo (ex: 2025 torcedor)"
-                  value={item.model}
-                  onChange={(event) => updateQuickItem(item.id, "model", event.target.value)}
-                  className={fieldClassName}
-                />
-                <div className="grid gap-3 sm:grid-cols-5">
-                  {SHIRT_SIZES.map((shirtSize) => (
-                    <label
-                      key={shirtSize}
-                      className="rounded-2xl border border-neutral-200 bg-white px-3 py-3 text-sm text-neutral-600"
-                    >
-                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-neutral-500">
-                        {shirtSize}
-                      </span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={item.sizeQuantities[shirtSize] ?? ""}
-                        onChange={(event) =>
-                          updateQuickItemSize(
-                            item.id,
-                            shirtSize,
-                            sanitizeNumericInput(event.target.value),
-                          )
-                        }
-                        className={`${compactFieldClassName} text-center`}
-                      />
-                    </label>
-                  ))}
-                </div>
-                <input
-                  placeholder="Descricao curta (opcional)"
-                  value={item.description}
-                  onChange={(event) =>
-                    updateQuickItem(item.id, "description", event.target.value)
-                  }
-                  className={fieldClassName}
-                />
-                {SHIRT_SIZES.map((shirtSize) => {
-                  const itemQuantity = parseNumber(item.sizeQuantities[shirtSize] ?? "");
-                  if (itemQuantity <= 0) return null;
-
-                  return (
-                    <div key={`${item.id}-${shirtSize}`}>
-                      <input type="hidden" name="quickItemTeam" value={item.team} />
-                      <input type="hidden" name="quickItemModel" value={item.model} />
-                      <input type="hidden" name="quickItemDescription" value={item.description} />
-                      <input type="hidden" name="quickItemSize" value={shirtSize} />
-                      <input type="hidden" name="quickItemQuantity" value={String(itemQuantity)} />
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={addQuickItem}
-              className="rounded-full border border-neutral-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700 hover:border-neutral-500"
-            >
-              Adicionar modelo
-            </button>
-            <p className="text-xs text-neutral-500">
-              Um unico pedido pode conter varios modelos, e cada modelo pode ter varios tamanhos
-              com quantidades diferentes. O sistema salva sem criar produto no catalogo.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-4 space-y-3 text-sm text-neutral-600">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={productMode === "custom"}
-                onChange={() => setProductMode("custom")}
-              />
-              Pedido rapido (sem cadastro previo)
-            </label>
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
-              <input
-                name="customName"
-                placeholder="Nome da camisa"
-                defaultValue="Camisa de time sob encomenda"
-                className={fieldClassName}
-              />
-              <input
-                name="customTeam"
-                placeholder="Time (opcional)"
-                className={fieldClassName}
-              />
-              <input
-                name="customModel"
-                placeholder="Modelo (opcional)"
-                className={fieldClassName}
-              />
-              <input
-                name="customDescription"
-                placeholder="Descricao (opcional)"
-                className={fieldClassName}
-              />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
+        <div className="space-y-6">
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Camisa</h2>
+              <span className={helperBadgeClassName}>Produto</span>
             </div>
+            <input
+              type="hidden"
+              name="productMode"
+              value={entryMode === "quick" ? "custom" : productMode}
+            />
 
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={productMode === "existing"}
-                onChange={() => setProductMode("existing")}
-              />
-              Usar produto do catalogo
-            </label>
-            <select
-              name="productSlug"
-              value={productSlug}
-              onChange={(event) => setProductSlug(event.target.value)}
-              className={fieldClassName}
-            >
-              <option value="">Selecione (opcional)</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.slug}>
-                  {product.name} - R$ {product.basePrice.toFixed(2)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </section>
+            {entryMode === "quick" ? (
+              <div className="mt-4 space-y-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
+                <input type="hidden" name="customName" value="Camisa de time sob encomenda" />
+                {quickItems.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-500">
+                        Modelo {index + 1}
+                      </p>
+                      {quickItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeQuickItem(item.id)}
+                          className="text-xs font-semibold text-red-600 hover:text-red-700"
+                        >
+                          Remover
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <input
+                        placeholder="Time (ex: Vitoria)"
+                        value={item.team}
+                        onChange={(event) => updateQuickItem(item.id, "team", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <input
+                        placeholder="Modelo (ex: 2025 torcedor)"
+                        value={item.model}
+                        onChange={(event) => updateQuickItem(item.id, "model", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                    <div className="grid gap-3 sm:grid-cols-5">
+                      {SHIRT_SIZES.map((shirtSize) => (
+                        <label
+                          key={shirtSize}
+                          className="rounded-2xl border border-neutral-200 bg-white px-3 py-3 text-sm text-neutral-600"
+                        >
+                          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-neutral-500">
+                            {shirtSize}
+                          </span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={item.sizeQuantities[shirtSize] ?? ""}
+                            onChange={(event) =>
+                              updateQuickItemSize(
+                                item.id,
+                                shirtSize,
+                                sanitizeNumericInput(event.target.value),
+                              )
+                            }
+                            className={`${compactFieldClassName} text-center`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <input
+                      placeholder="Descricao curta (opcional)"
+                      value={item.description}
+                      onChange={(event) =>
+                        updateQuickItem(item.id, "description", event.target.value)
+                      }
+                      className={fieldClassName}
+                    />
+                    {SHIRT_SIZES.map((shirtSize) => {
+                      const itemQuantity = parseNumber(item.sizeQuantities[shirtSize] ?? "");
+                      if (itemQuantity <= 0) return null;
 
-      <section className={sectionCardClassName}>
-        <div className="flex items-center justify-between">
-          <h2 className={sectionTitleClassName}>Pedido</h2>
-          <span className={helperBadgeClassName}>Resumo</span>
-        </div>
-        <div className="mt-4 grid gap-4">
+                      return (
+                        <div key={`${item.id}-${shirtSize}`}>
+                          <input type="hidden" name="quickItemTeam" value={item.team} />
+                          <input type="hidden" name="quickItemModel" value={item.model} />
+                          <input type="hidden" name="quickItemDescription" value={item.description} />
+                          <input type="hidden" name="quickItemSize" value={shirtSize} />
+                          <input type="hidden" name="quickItemQuantity" value={String(itemQuantity)} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={addQuickItem}
+                    className="rounded-full border border-neutral-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700 hover:border-neutral-500"
+                  >
+                    Adicionar modelo
+                  </button>
+                  <p className="text-xs text-neutral-500">
+                    Varios modelos e tamanhos no mesmo pedido, sem criar item no catalogo.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3 text-sm text-neutral-600">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={productMode === "custom"}
+                    onChange={() => setProductMode("custom")}
+                  />
+                  Pedido rapido (sem cadastro previo)
+                </label>
+                <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4 md:grid-cols-2">
+                  <input
+                    name="customName"
+                    placeholder="Nome da camisa"
+                    defaultValue="Camisa de time sob encomenda"
+                    className={fieldClassName}
+                  />
+                  <input
+                    name="customTeam"
+                    placeholder="Time (opcional)"
+                    className={fieldClassName}
+                  />
+                  <input
+                    name="customModel"
+                    placeholder="Modelo (opcional)"
+                    className={fieldClassName}
+                  />
+                  <input
+                    name="customDescription"
+                    placeholder="Descricao (opcional)"
+                    className={fieldClassName}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={productMode === "existing"}
+                    onChange={() => setProductMode("existing")}
+                  />
+                  Usar produto do catalogo
+                </label>
+                <select
+                  name="productSlug"
+                  value={productSlug}
+                  onChange={(event) => setProductSlug(event.target.value)}
+                  className={fieldClassName}
+                >
+                  <option value="">Selecione (opcional)</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.slug}>
+                      {product.name} - R$ {product.basePrice.toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </section>
+
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Pedido</h2>
+              <span className={helperBadgeClassName}>Financeiro</span>
+            </div>
+            <div className="mt-4 grid gap-4">
           {entryMode === "quick" ? (
             <>
               <input type="hidden" name="size" value="M" />
               <input type="hidden" name="quantity" value={String(quantityValue)} />
-              <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                Modelos no pedido: <span className="font-semibold">{quickItems.length}</span>
-                <br />
-                Modelos validos: <span className="font-semibold">{validQuickModels.length}</span>
-                <br />
-                Quantidade total: <span className="font-semibold">{quantityValue} camisa(s)</span>
-              </p>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <p className={summaryStatCardClassName}>
+                      Modelos no pedido
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">{quickItems.length}</span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Modelos validos
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        {validQuickModels.length}
+                      </span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Quantidade total
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        {quantityValue} camisa(s)
+                      </span>
+                    </p>
+                  </div>
             </>
           ) : (
-            <>
+                <div className="grid gap-3 md:grid-cols-2">
               <select
                 name="size"
                 defaultValue="M"
@@ -612,35 +633,51 @@ export function NewOrderDetails({
                 onChange={(event) => setQuantity(event.target.value)}
                 className={fieldClassName}
               />
-            </>
+                </div>
           )}
-          <input
-            name="orderTotal"
-            type="number"
-            step="0.01"
-            placeholder="Valor vendido total (R$)"
-            value={orderTotalInput}
-            onChange={(event) => setOrderTotalInput(event.target.value)}
-            className={fieldClassName}
-          />
-          <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
-          <input type="hidden" name="amountPaidSource" value={syncSource} />
-          <div className="grid gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-xs text-neutral-600">
-            <p>
-              Valor vendido total:{" "}
-              <span className="font-semibold">R$ {formatMoney(totalOrder)}</span>
-            </p>
-            <p>
-              Valor medio por camisa:{" "}
-              <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
-            </p>
-            <p>
-              Quantidade calculada:{" "}
-              <span className="font-semibold">{quantityValue}</span>
-            </p>
-          </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <input
+                  name="orderTotal"
+                  type="number"
+                  step="0.01"
+                  placeholder="Valor vendido total (R$)"
+                  value={orderTotalInput}
+                  onChange={(event) => setOrderTotalInput(event.target.value)}
+                  className="md:col-span-2 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+                />
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                  Valor medio
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(effectiveUnitPrice)}
+                  </span>
+                </div>
+              </div>
+              <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
+              <input type="hidden" name="amountPaidSource" value={syncSource} />
+              <div className="grid gap-3 md:grid-cols-3">
+                <p className={summaryStatCardClassName}>
+                  Valor vendido
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(totalOrder)}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Valor medio por camisa
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(effectiveUnitPrice)}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Quantidade calculada
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">{quantityValue}</span>
+                </p>
+              </div>
           {!isPersonalUse && !isStockOrder ? (
-            <>
+                <div className="grid gap-3 md:grid-cols-3">
               <select
                 name="paymentType"
                 value={paymentType}
@@ -669,7 +706,7 @@ export function NewOrderDetails({
                 onChange={(event) => syncPercentFromAmount(event.target.value)}
                 className={fieldClassName}
               />
-            </>
+                </div>
           ) : (
             <>
               <input type="hidden" name="paymentType" value={PaymentType.None} />
@@ -682,12 +719,13 @@ export function NewOrderDetails({
               </p>
             </>
           )}
-          <textarea
-            name="notes"
-            placeholder="Observacoes internas"
-            className="min-h-[96px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
-          />
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+              <textarea
+                name="notes"
+                placeholder="Observacoes internas"
+                className="min-h-[88px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+              />
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
             <input
               name="isPersonalUse"
               type="checkbox"
@@ -702,8 +740,8 @@ export function NewOrderDetails({
               }}
             />
             Uso pessoal (nao entra em faturamento e lucro)
-          </label>
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+                </label>
+                <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
             <input
               name="isStockOrder"
               type="checkbox"
@@ -718,18 +756,20 @@ export function NewOrderDetails({
               }}
             />
             Pedido para estoque (sem venda ao cliente)
-          </label>
-        </div>
-      </section>
+                </label>
+              </div>
+            </div>
+          </section>
 
-      <section className={sectionCardClassName}>
-        <div className="flex items-center justify-between">
-          <h2 className={sectionTitleClassName}>Pacote de importacao</h2>
-          <span className={helperBadgeClassName}>Logistica</span>
-        </div>
-        <div className="mt-4 space-y-4">
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Pacote de importacao</h2>
+              <span className={helperBadgeClassName}>Logistica</span>
+            </div>
+            <div className="mt-4 space-y-4">
           <input type="hidden" name="packageMode" value={packageMode} />
           <input type="hidden" name="stockSourceOrderId" value={stockSourceOrderId} />
+              <div className="grid gap-3 md:grid-cols-2">
           <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
@@ -774,6 +814,7 @@ export function NewOrderDetails({
             />
             Sem pacote (pedido isolado)
           </label>
+              </div>
 
           {packageMode === PackageMode.InternalStock && (
             <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
@@ -796,25 +837,37 @@ export function NewOrderDetails({
                     ))}
                   </select>
                   {selectedInternalStockOrder && (
-                    <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                      Fornecedor:{" "}
-                      <span className="font-semibold">{selectedInternalStockOrder.supplierName}</span>
-                      <br />
-                      Custo unitario herdado:{" "}
-                      <span className="font-semibold">
-                        R$ {formatMoney(selectedInternalStockOrder.unitCost)}
-                      </span>
-                      <br />
-                      Saldo disponivel:{" "}
-                      <span className="font-semibold">
-                        {selectedInternalStockOrder.availableQuantity} camisa(s)
-                      </span>
-                      <br />
-                      {selectedInternalStockOrder.packageCode
-                        ? `Origem: pacote ${selectedInternalStockOrder.packageCode}`
-                        : "Origem: pedido de estoque sem pacote vinculado"}
-                    </p>
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <p className={summaryStatCardClassName}>
+                            Fornecedor
+                            <br />
+                            <span className="text-sm font-semibold text-neutral-950">
+                              {selectedInternalStockOrder.supplierName}
+                            </span>
+                          </p>
+                          <p className={summaryStatCardClassName}>
+                            Custo unitario herdado
+                            <br />
+                            <span className="text-sm font-semibold text-neutral-950">
+                              R$ {formatMoney(selectedInternalStockOrder.unitCost)}
+                            </span>
+                          </p>
+                          <p className={summaryStatCardClassName}>
+                            Saldo disponivel
+                            <br />
+                            <span className="text-sm font-semibold text-neutral-950">
+                              {selectedInternalStockOrder.availableQuantity} camisa(s)
+                            </span>
+                          </p>
+                        </div>
                   )}
+                      {selectedInternalStockOrder && (
+                        <p className="text-xs text-neutral-500">
+                          {selectedInternalStockOrder.packageCode
+                            ? `Origem: pacote ${selectedInternalStockOrder.packageCode}`
+                            : "Origem: pedido de estoque sem pacote vinculado"}
+                        </p>
+                      )}
                   {selectedInternalStockOrder &&
                     selectedInternalStockOrder.availableQuantity < quantityValue && (
                       <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
@@ -858,6 +911,7 @@ export function NewOrderDetails({
 
           {packageMode === PackageMode.New && (
             <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
               <select
                 name="supplierId"
                 value={supplierId}
@@ -896,6 +950,7 @@ export function NewOrderDetails({
                 placeholder="Codigo de rastreio (opcional)"
                 className={fieldClassName}
               />
+              </div>
               <label className="flex items-center gap-2 text-sm text-neutral-600">
                 <input
                   type="checkbox"
@@ -906,7 +961,7 @@ export function NewOrderDetails({
               </label>
 
               {(showPackageAdvanced || entryMode === "advanced") && (
-                <>
+                <div className="grid gap-3 md:grid-cols-2">
                   <input
                     name="extraFees"
                     type="number"
@@ -946,9 +1001,9 @@ export function NewOrderDetails({
                   <textarea
                     name="packageNotes"
                     placeholder="Observacoes do pacote"
-                    className="min-h-[80px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+                    className="min-h-[88px] md:col-span-2 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
                   />
-                </>
+                </div>
               )}
 
               {!showPackageAdvanced && entryMode === "quick" && (
@@ -961,81 +1016,108 @@ export function NewOrderDetails({
                   <input type="hidden" name="packageNotes" value="" />
                 </>
               )}
-              <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                Custo final do pacote:{" "}
-                <span className="font-semibold">
-                  R$ {formatMoney(packageSummary.packageFinalCost)}
-                </span>
-                <br />
-                Custo medio por camisa:{" "}
-                <span className="font-semibold">
-                  R$ {formatMoney(packageSummary.averageUnitCost)}
-                </span>
-                <br />
-                Custo alocado neste pedido:{" "}
-                <span className="font-semibold">
-                  R$ {formatMoney(packageSummary.allocatedCost)}
-                </span>
-              </p>
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <p className={summaryStatCardClassName}>
+                      Custo final do pacote
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        R$ {formatMoney(packageSummary.packageFinalCost)}
+                      </span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Custo medio por camisa
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        R$ {formatMoney(packageSummary.averageUnitCost)}
+                      </span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Custo alocado neste pedido
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        R$ {formatMoney(packageSummary.allocatedCost)}
+                      </span>
+                    </p>
+                  </div>
             </div>
           )}
+            </div>
+          </section>
         </div>
-      </section>
 
-      <section className={sectionCardClassName}>
-        <div className="flex items-center justify-between">
-          <h2 className={sectionTitleClassName}>Resumo Final</h2>
-          <span className={helperBadgeClassName}>Checklist</span>
-        </div>
-        <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
-          <p>
-            Tipo efetivo do pedido:{" "}
-            <span className="font-semibold text-neutral-950">{effectiveFlowSummary.orderType}</span>
-          </p>
-          <p>
-            Regra financeira:{" "}
-            <span className="font-semibold text-neutral-950">{effectiveFlowSummary.revenueMode}</span>
-          </p>
-          <p>
-            Origem do custo:{" "}
-            <span className="font-semibold text-neutral-950">
-              {effectiveFlowSummary.packageModeLabel}
-            </span>
-          </p>
-          <p>
-            Fonte selecionada:{" "}
-            <span className="font-semibold text-neutral-950">
-              {effectiveFlowSummary.packageDetail}
-            </span>
-          </p>
-          <p>
-            Quantidade final: <span className="font-semibold text-neutral-950">{quantityValue}</span>
-            {" "}camisa(s)
-          </p>
-          <p>
-            Total previsto:{" "}
-            <span className="font-semibold text-neutral-950">R$ {formatMoney(totalOrder)}</span>
-          </p>
-          {!isPersonalUse && !isStockOrder && (
-            <p>
-              Valor de entrada:{" "}
-              <span className="font-semibold text-neutral-950">R$ {syncedPaid.amount}</span>
-              {" "}({syncedPaid.percent}%)
-            </p>
-          )}
-        </div>
-        {effectiveFlowSummary.primaryWarning ? (
-          <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            Revise antes de criar: {effectiveFlowSummary.primaryWarning}
-          </p>
-        ) : (
-          <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-            Fluxo consistente: o pedido esta pronto para ser criado com as regras acima.
-          </p>
-        )}
-      </section>
+        <div className="space-y-6 self-start xl:sticky xl:top-6">
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Resumo Final</h2>
+              <span className={helperBadgeClassName}>Checklist</span>
+            </div>
+            <div className="mt-4 grid gap-3">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+                <p className={summaryStatCardClassName}>
+                  Tipo efetivo do pedido
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.orderType}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Regra financeira
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.revenueMode}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Origem do custo
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.packageModeLabel}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Fonte selecionada
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.packageDetail}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Quantidade final
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {quantityValue} camisa(s)
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Total previsto
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(totalOrder)}
+                  </span>
+                </p>
+                {!isPersonalUse && !isStockOrder && (
+                  <p className={summaryStatCardClassName}>
+                    Valor de entrada
+                    <br />
+                    <span className="text-sm font-semibold text-neutral-950">
+                      R$ {syncedPaid.amount} ({syncedPaid.percent}%)
+                    </span>
+                  </p>
+                )}
+              </div>
+              {effectiveFlowSummary.primaryWarning ? (
+                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  Revise antes de criar: {effectiveFlowSummary.primaryWarning}
+                </p>
+              ) : (
+                <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  Fluxo consistente: o pedido esta pronto para ser criado com as regras acima.
+                </p>
+              )}
+            </div>
+          </section>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3">
         <SubmitButton
           pendingLabel="Criando pedido..."
           className="w-full"
@@ -1055,6 +1137,8 @@ export function NewOrderDetails({
         >
           Criar e novo
         </SubmitButton>
+          </div>
+        </div>
       </div>
     </div>
   );
