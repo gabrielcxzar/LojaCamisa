@@ -71,16 +71,16 @@ function formatPercent(value: number) {
 
 const SHIRT_SIZES = ["PP", "P", "M", "G", "GG"];
 const fieldClassName =
-  "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+  "w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 const compactFieldClassName =
-  "w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+  "w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm font-medium text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 const sectionCardClassName =
-  "rounded-3xl border border-neutral-200 bg-white/90 p-5 shadow-sm shadow-neutral-100";
-const sectionTitleClassName = "text-lg font-semibold text-neutral-900";
+  "rounded-[26px] border border-neutral-200 bg-white/90 p-4 shadow-sm shadow-neutral-100";
+const sectionTitleClassName = "text-base font-semibold text-neutral-900";
 const helperBadgeClassName =
   "text-[0.65rem] uppercase tracking-[0.3em] text-neutral-500";
 const summaryStatCardClassName =
-  "rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600";
+  "rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600";
 
 function paymentTypeLabel(paymentType: PaymentType) {
   if (paymentType === PaymentType.Full) return "Pagamento integral";
@@ -444,14 +444,14 @@ export function NewOrderDetails({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 lg:space-y-5">
       <input type="hidden" name="entryMode" value={entryMode} />
       <section className={sectionCardClassName}>
         <div className="flex items-center justify-between">
           <h2 className={sectionTitleClassName}>Modo de cadastro</h2>
           <span className={helperBadgeClassName}>Entrada</span>
         </div>
-        <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 sm:grid-cols-2">
+        <div className="mt-3 grid gap-2.5 rounded-2xl border border-neutral-200 p-3 text-sm text-neutral-600 sm:grid-cols-2">
           <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2">
             <input
               type="radio"
@@ -474,8 +474,8 @@ export function NewOrderDetails({
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.95fr)]">
-        <div className="space-y-6">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.42fr)_minmax(270px,0.78fr)] 2xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,0.8fr)]">
+        <div className="space-y-5">
           <section className={sectionCardClassName}>
             <div className="flex items-center justify-between">
               <h2 className={sectionTitleClassName}>Camisa</h2>
@@ -488,12 +488,12 @@ export function NewOrderDetails({
             />
 
             {entryMode === "quick" ? (
-              <div className="mt-4 space-y-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
+              <div className="mt-3 space-y-2.5 rounded-2xl border border-neutral-200 p-3 text-sm text-neutral-600">
                 <input type="hidden" name="customName" value="Camisa de time sob encomenda" />
                 {quickItems.map((item, index) => (
                   <div
                     key={item.id}
-                    className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
+                    className="space-y-2.5 rounded-2xl border border-neutral-200 bg-neutral-50 p-3"
                   >
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-500">
@@ -509,7 +509,7 @@ export function NewOrderDetails({
                         </button>
                       )}
                     </div>
-                    <div className="grid gap-3 md:grid-cols-2">
+                    <div className="grid gap-2.5 md:grid-cols-2">
                       <input
                         placeholder="Time (ex: Vitoria)"
                         value={item.team}
@@ -523,13 +523,13 @@ export function NewOrderDetails({
                         className={fieldClassName}
                       />
                     </div>
-                    <div className="grid gap-3 sm:grid-cols-5">
+                    <div className="grid gap-2 sm:grid-cols-5">
                       {SHIRT_SIZES.map((shirtSize) => (
                         <label
                           key={shirtSize}
-                          className="rounded-2xl border border-neutral-200 bg-white px-3 py-3 text-sm text-neutral-600"
+                          className="rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-sm text-neutral-600"
                         >
-                          <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-neutral-500">
+                          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
                             {shirtSize}
                           </span>
                           <input
@@ -587,7 +587,7 @@ export function NewOrderDetails({
                 </div>
               </div>
             ) : (
-              <div className="mt-4 space-y-3 text-sm text-neutral-600">
+                <div className="mt-3 space-y-2.5 text-sm text-neutral-600">
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"
@@ -596,7 +596,7 @@ export function NewOrderDetails({
                   />
                   Pedido rapido (sem cadastro previo)
                 </label>
-                <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4 md:grid-cols-2">
+                <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3 md:grid-cols-2">
                   <input
                     name="customName"
                     placeholder="Nome da camisa"
@@ -650,12 +650,12 @@ export function NewOrderDetails({
               <h2 className={sectionTitleClassName}>Pedido</h2>
               <span className={helperBadgeClassName}>Financeiro</span>
             </div>
-            <div className="mt-4 grid gap-4">
+            <div className="mt-3 grid gap-3">
           {entryMode === "quick" ? (
             <>
               <input type="hidden" name="size" value="M" />
               <input type="hidden" name="quantity" value={String(quantityValue)} />
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-2.5 md:grid-cols-3">
                     <p className={summaryStatCardClassName}>
                       Modelos no pedido
                       <br />
@@ -678,7 +678,7 @@ export function NewOrderDetails({
                   </div>
             </>
           ) : (
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-2.5 md:grid-cols-2">
               <select
                 name="size"
                 defaultValue="M"
@@ -700,7 +700,7 @@ export function NewOrderDetails({
               />
                 </div>
           )}
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-2.5 md:grid-cols-3">
                 <input
                   name="orderTotal"
                   type="number"
@@ -708,9 +708,9 @@ export function NewOrderDetails({
                   placeholder="Valor vendido total (R$)"
                   value={orderTotalInput}
                   onChange={(event) => setOrderTotalInput(event.target.value)}
-                  className="md:col-span-2 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+                  className="md:col-span-2 w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
                 />
-                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600">
                   Valor medio
                   <br />
                   <span className="text-sm font-semibold text-neutral-950">
@@ -720,7 +720,7 @@ export function NewOrderDetails({
               </div>
               <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
               <input type="hidden" name="amountPaidSource" value={syncSource} />
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="grid gap-2.5 md:grid-cols-3">
                 <p className={summaryStatCardClassName}>
                   Valor vendido
                   <br />
@@ -742,7 +742,7 @@ export function NewOrderDetails({
                 </p>
               </div>
           {!isPersonalUse && !isStockOrder ? (
-                <div className="grid gap-3 md:grid-cols-3">
+                <div className="grid gap-2.5 md:grid-cols-3">
               <select
                 name="paymentType"
                 value={paymentType}
@@ -777,7 +777,7 @@ export function NewOrderDetails({
               <input type="hidden" name="paymentType" value={PaymentType.None} />
               <input type="hidden" name="amountPaidPercent" value="0" />
               <input type="hidden" name="amountPaid" value="0" />
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
                 {isPersonalUse
                   ? "Uso pessoal ativo: pedido fica fora de faturamento e lucro."
                   : "Pedido para estoque: sem venda registrada no momento."}
@@ -787,10 +787,10 @@ export function NewOrderDetails({
               <textarea
                 name="notes"
                 placeholder="Observacoes internas"
-                className="min-h-[88px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+                className="min-h-[72px] w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
               />
-              <div className="grid gap-3 md:grid-cols-2">
-                <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600">
             <input
               name="isPersonalUse"
               type="checkbox"
@@ -806,7 +806,7 @@ export function NewOrderDetails({
             />
             Uso pessoal (nao entra em faturamento e lucro)
                 </label>
-                <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+                <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600">
             <input
               name="isStockOrder"
               type="checkbox"
@@ -831,11 +831,11 @@ export function NewOrderDetails({
               <h2 className={sectionTitleClassName}>Pacote de importacao</h2>
               <span className={helperBadgeClassName}>Logistica</span>
             </div>
-            <div className="mt-4 space-y-4">
+            <div className="mt-3 space-y-3">
           <input type="hidden" name="packageMode" value={packageMode} />
           <input type="hidden" name="stockSourceOrderId" value={stockSourceOrderId} />
-              <div className="grid gap-3 md:grid-cols-2">
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
+              <div className="grid gap-2.5 md:grid-cols-2">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
@@ -845,7 +845,7 @@ export function NewOrderDetails({
             />
             Criar novo pacote para este pedido
           </label>
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
@@ -855,7 +855,7 @@ export function NewOrderDetails({
             />
             Vincular a pacote existente
           </label>
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
@@ -869,7 +869,7 @@ export function NewOrderDetails({
             />
             Baixar do estoque interno
           </label>
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600 transition hover:border-neutral-300">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
@@ -882,13 +882,13 @@ export function NewOrderDetails({
               </div>
 
           {packageMode === PackageMode.InternalStock && (
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+            <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3">
               {internalStockLoading ? (
-                <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600">
                   Carregando pedidos de estoque...
                 </p>
               ) : internalStockOrders.length === 0 ? (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
                   Nenhum pedido de estoque com saldo e custo unitario disponivel.
                 </p>
               ) : (
@@ -906,7 +906,7 @@ export function NewOrderDetails({
                     ))}
                   </select>
                   {selectedInternalStockOrder && (
-                        <div className="grid gap-3 md:grid-cols-3">
+                        <div className="grid gap-2.5 md:grid-cols-3">
                           <p className={summaryStatCardClassName}>
                             Fornecedor
                             <br />
@@ -939,7 +939,7 @@ export function NewOrderDetails({
                       )}
                   {selectedInternalStockOrder &&
                     selectedInternalStockOrder.availableQuantity < quantityValue && (
-                      <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                      <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
                         Quantidade do pedido ({quantityValue}) maior que o saldo disponivel (
                         {selectedInternalStockOrder.availableQuantity}).
                       </p>
@@ -954,7 +954,7 @@ export function NewOrderDetails({
           )}
 
           {packageMode === PackageMode.Existing && (
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+            <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3">
               <select
                 name="existingPackageId"
                 value={existingPackageId}
@@ -984,8 +984,8 @@ export function NewOrderDetails({
           )}
 
           {packageMode === PackageMode.New && (
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
-              <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3">
+              <div className="grid gap-2.5 md:grid-cols-2">
               <select
                 name="supplierId"
                 value={supplierId}
@@ -1035,7 +1035,7 @@ export function NewOrderDetails({
               </label>
 
               {(showPackageAdvanced || entryMode === "advanced") && (
-                <div className="grid gap-3 md:grid-cols-2">
+                <div className="grid gap-2.5 md:grid-cols-2">
                   <input
                     name="extraFees"
                     type="number"
@@ -1075,7 +1075,7 @@ export function NewOrderDetails({
                   <textarea
                     name="packageNotes"
                     placeholder="Observacoes do pacote"
-                    className="min-h-[88px] md:col-span-2 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+                    className="min-h-[72px] md:col-span-2 w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
                   />
                 </div>
               )}
@@ -1090,7 +1090,7 @@ export function NewOrderDetails({
                   <input type="hidden" name="packageNotes" value="" />
                 </>
               )}
-                  <div className="grid gap-3 md:grid-cols-3">
+                  <div className="grid gap-2.5 md:grid-cols-3">
                     <p className={summaryStatCardClassName}>
                       Custo final do pacote
                       <br />
@@ -1119,14 +1119,14 @@ export function NewOrderDetails({
           </section>
         </div>
 
-        <div className="space-y-6 self-start xl:sticky xl:top-6">
+        <div className="space-y-4 self-start xl:sticky xl:top-4">
           <section className={sectionCardClassName}>
             <div className="flex items-center justify-between">
               <h2 className={sectionTitleClassName}>Resumo Final</h2>
               <span className={helperBadgeClassName}>Checklist</span>
             </div>
-            <div className="mt-4 grid gap-3">
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-1">
+            <div className="mt-3 grid gap-2.5">
+              <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-1">
                 <p className={summaryStatCardClassName}>
                   Tipo efetivo do pedido
                   <br />
@@ -1180,18 +1180,18 @@ export function NewOrderDetails({
                 )}
               </div>
               {effectiveFlowSummary.primaryWarning ? (
-                <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
                   Revise antes de criar: {effectiveFlowSummary.primaryWarning}
                 </p>
               ) : (
-                <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
                   Fluxo consistente: o pedido esta pronto para ser criado com as regras acima.
                 </p>
               )}
             </div>
           </section>
 
-          <div className="grid gap-3">
+          <div className="grid gap-2.5">
         <SubmitButton
           pendingLabel="Criando pedido..."
           className="w-full"

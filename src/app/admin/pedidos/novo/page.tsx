@@ -17,8 +17,8 @@ export default async function NewOrderPage() {
   const sortedProducts = products.sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="bg-gradient-to-br from-neutral-50 via-white to-neutral-100 py-10">
-      <Container className="space-y-8">
+    <div className="bg-gradient-to-br from-neutral-50 via-white to-neutral-100 py-6 lg:py-8">
+      <Container className="space-y-5 lg:space-y-6">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
             Novo pedido
@@ -27,9 +27,9 @@ export default async function NewOrderPage() {
         </div>
         <form
           action={createOrderManual}
-          className="grid gap-10 rounded-[32px] border border-neutral-200 bg-gradient-to-br from-white/90 to-white/70 p-8 shadow-2xl backdrop-blur lg:grid-cols-[1.1fr_0.9fr]"
+          className="space-y-5 rounded-[28px] border border-neutral-200 bg-gradient-to-br from-white/90 to-white/70 p-4 shadow-xl backdrop-blur lg:space-y-6 lg:p-6"
         >
-          <div className="space-y-6 rounded-3xl border border-neutral-200 bg-white/90 p-6 shadow-sm">
+          <div className="rounded-[26px] border border-neutral-200 bg-white/90 p-4 shadow-sm">
             <NewOrderCustomerFields />
           </div>
 

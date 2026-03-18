@@ -16,7 +16,7 @@ type CustomerPresetOption = {
 };
 
 const fieldClassName =
-  "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+  "w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 
 function presetLabel(preset: CustomerPresetOption) {
   const contact = preset.phone || preset.email || "sem contato";
@@ -82,10 +82,10 @@ export function NewOrderCustomerFields() {
   }
 
   return (
-    <div className="space-y-8">
-      <section>
-        <h2 className="text-lg font-semibold">Cliente</h2>
-        <div className="mt-4 grid gap-3">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Cliente</h2>
+        <div className="grid gap-2.5">
           <input
             list="customer-presets"
             value={selectedPresetLabel}
@@ -101,7 +101,7 @@ export function NewOrderCustomerFields() {
               applyPreset(next);
             }}
             placeholder="Buscar cliente salvo"
-            className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+            className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
           />
           <datalist id="customer-presets">
             {presets.map((preset) => {
@@ -117,22 +117,24 @@ export function NewOrderCustomerFields() {
             </p>
           )}
 
-          <input
-            name="name"
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nome completo"
-            className={fieldClassName}
-          />
-          <input
-            name="phone"
-            required
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder="Telefone / WhatsApp"
-            className={fieldClassName}
-          />
+          <div className="grid gap-2.5 md:grid-cols-2">
+            <input
+              name="name"
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nome completo"
+              className={fieldClassName}
+            />
+            <input
+              name="phone"
+              required
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="Telefone / WhatsApp"
+              className={fieldClassName}
+            />
+          </div>
 
           <label className="flex items-center gap-2 text-sm text-neutral-600">
             <input
@@ -144,7 +146,7 @@ export function NewOrderCustomerFields() {
           </label>
 
           {showAdvanced && (
-            <>
+            <div className="grid gap-2.5 md:grid-cols-3">
               <input
                 name="email"
                 type="email"
@@ -167,14 +169,14 @@ export function NewOrderCustomerFields() {
                 placeholder="CEP (opcional)"
                 className={fieldClassName}
               />
-            </>
+            </div>
           )}
         </div>
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Destino</h2>
-        <div className="mt-4 grid gap-4">
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Destino</h2>
+        <div className="grid gap-2.5">
           <input
             name="line1"
             required
@@ -183,7 +185,7 @@ export function NewOrderCustomerFields() {
             placeholder="Rua e numero"
             className={fieldClassName}
           />
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-2.5 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
             <input
               name="city"
               required

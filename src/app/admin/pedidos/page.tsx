@@ -100,9 +100,10 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           <Link
             key={order.id}
             href={`/admin/pedidos/${order.id}`}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-neutral-200 px-4 py-3 text-sm transition hover:border-neutral-400 hover:bg-neutral-50"
+            className="block w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm transition hover:border-neutral-400 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           >
-            <div>
+            <div className="pointer-events-none grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="min-w-0">
               <p className="font-semibold">
                 {order.code} • {order.customer_name}
               </p>
@@ -121,8 +122,14 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
               {order.is_personal_use === 1 && (
                 <p className="text-xs text-amber-700">Uso pessoal (fora do financeiro)</p>
               )}
+              </div>
+              <Badge
+                tone="muted"
+                className="shrink-0 justify-self-start md:justify-self-end"
+              >
+                {statusLabel[order.status]}
+              </Badge>
             </div>
-            <Badge tone="muted">{statusLabel[order.status]}</Badge>
           </Link>
         ))}
       </div>
