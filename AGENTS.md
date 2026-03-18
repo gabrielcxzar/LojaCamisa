@@ -162,3 +162,29 @@ Agentes especializados para automação e desenvolvimento do sistema de gestão 
 ---
 
 **Nota**: Para adicionar novo agent, atualize este arquivo e crie um arquivo `.AGENT.md` específico.
+---
+
+## Agents distribuÃ­dos no projeto
+
+Para facilitar investigaÃ§Ã£o de gargalos, cada domÃ­nio principal pode ter um `.AGENT.md`
+prÃ³ximo do cÃ³digo. Use o agent mais local possÃ­vel antes de cair para o agent genÃ©rico da raiz.
+
+| Pasta | Agent local | Foco |
+|-------|-------------|------|
+| `/src/app/admin/pedidos/` | `Pedidos Listagem e Detalhe` | navegaÃ§Ã£o, SSR, carregamento e aÃ§Ãµes |
+| `/src/app/admin/pedidos/novo/` | `Novo Pedido` | criaÃ§Ã£o, validaÃ§Ãµes, UX e submit |
+| `/src/app/admin/financeiro/` | `Financeiro Admin` | indicadores e leituras financeiras |
+| `/src/app/admin/produtos/` | `CatÃ¡logo de Produtos` | CRUD de produtos e impacto em pedidos |
+| `/src/app/admin/fornecedores/` | `Fornecedores` | CRUD e integridade de vÃ­nculos |
+| `/src/app/api/tracking/` | `Tracking API` | cron, refresh e resiliÃªncia |
+| `/src/components/admin/` | `Admin UI` | layout, interaÃ§Ãµes e estado local |
+| `/src/lib/db/` + `db.ts` | `Banco e Queries` | queries, Ã­ndices, locks e IO |
+| `/src/lib/tracking/` | `Tracking Core` | integraÃ§Ã£o 17track e mapeamento |
+| `/src/modules/shared/` | `DomÃ­nio Compartilhado` | calculadoras e validaÃ§Ãµes reutilizadas |
+
+### Regra prÃ¡tica
+
+1. Comece pelo `.AGENT.md` da pasta mais prÃ³xima do problema.
+2. Se o gargalo atravessar camadas, combine o agent local com `Banco e Queries`.
+3. Quando houver rastreio, envolva tambÃ©m `Tracking Core` ou `Tracking API`.
+4. Prefira correÃ§Ãµes pequenas e verificÃ¡veis antes de refactors amplos.
