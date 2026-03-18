@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --experimental-strip-types src/modules/shared/domain/calculators.test.ts && node --experimental-strip-types src/modules/shared/validation/order-forms.test.ts",
-    "db:seed": "tsx scripts/seed.ts"
+    "db:seed": "tsx scripts/seed.ts",
+    "db:indexes": "tsx scripts/ensure-db-indexes.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

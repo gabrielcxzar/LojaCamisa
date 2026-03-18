@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   calculateOrderPricing,
@@ -42,8 +42,6 @@ type InternalStockOrderOption = {
 type Props = {
   products: ProductOption[];
   suppliers: SupplierOption[];
-  packages: ImportPackageOption[];
-  internalStockOrders: InternalStockOrderOption[];
 };
 
 type QuickItemInput = {
@@ -93,8 +91,6 @@ function paymentTypeLabel(paymentType: PaymentType) {
 export function NewOrderDetails({
   products,
   suppliers,
-  packages,
-  internalStockOrders,
 }: Props) {
   const [entryMode, setEntryMode] = useState<"quick" | "advanced">("quick");
   const [productMode, setProductMode] = useState<"custom" | "existing">("custom");
@@ -125,16 +121,20 @@ export function NewOrderDetails({
   const [isStockOrder, setIsStockOrder] = useState(false);
 
   const [packageMode, setPackageMode] = useState<PackageMode>(PackageMode.New);
-  const [existingPackageId, setExistingPackageId] = useState(packages[0]?.id ?? "");
-  const [stockSourceOrderId, setStockSourceOrderId] = useState(
-    internalStockOrders[0]?.id ?? "",
-  );
+  const [existingPackageId, setExistingPackageId] = useState("");
+  const [stockSourceOrderId, setStockSourceOrderId] = useState("");
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [packageQuantityInput, setPackageQuantityInput] = useState("1");
   const [productCostInput, setProductCostInput] = useState("");
   const [extraFeesInput, setExtraFeesInput] = useState("0.00");
   const [internalShippingInput, setInternalShippingInput] = useState("0.00");
   const [showPackageAdvanced, setShowPackageAdvanced] = useState(false);
+  const [packages, setPackages] = useState<ImportPackageOption[]>([]);
+  const [packagesLoaded, setPackagesLoaded] = useState(false);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+  const [internalStockOrders, setInternalStockOrders] = useState<InternalStockOrderOption[]>([]);
+  const [internalStockLoaded, setInternalStockLoaded] = useState(false);
+  const [internalStockLoading, setInternalStockLoading] = useState(false);
 
   const productPriceMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -208,6 +208,67 @@ export function NewOrderDetails({
     [internalStockOrders, stockSourceOrderId],
   );
 
+  async function ensurePackagesLoaded() {
+    if (packagesLoaded || packagesLoading) return;
+
+    setPackagesLoading(true);
+    try {
+      const response = await fetch("/api/admin/new-order-options?kind=packages", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+
+      const data = (await response.json()) as { packages?: ImportPackageOption[] };
+      const nextPackages = data.packages ?? [];
+      setPackages(nextPackages);
+      setPackagesLoaded(true);
+      if (!existingPackageId && nextPackages[0]?.id) {
+        setExistingPackageId(nextPackages[0].id);
+      }
+    } finally {
+      setPackagesLoading(false);
+    }
+  }
+
+  async function ensureInternalStockLoaded() {
+    if (internalStockLoaded || internalStockLoading) return;
+
+    setInternalStockLoading(true);
+    try {
+      const response = await fetch("/api/admin/new-order-options?kind=internal-stock", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+
+      const data = (await response.json()) as { internalStockOrders?: InternalStockOrderOption[] };
+      const nextOrders = data.internalStockOrders ?? [];
+      setInternalStockOrders(nextOrders);
+      setInternalStockLoaded(true);
+      if (!stockSourceOrderId && nextOrders[0]?.id) {
+        setStockSourceOrderId(nextOrders[0].id);
+      }
+    } finally {
+      setInternalStockLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (packageMode === PackageMode.Existing) {
+      void ensurePackagesLoaded();
+      return;
+    }
+
+    if (packageMode === PackageMode.InternalStock) {
+      void ensureInternalStockLoaded();
+    }
+  }, [packageMode]);
+
+  const auxiliaryOptionsLoading =
+    (packageMode === PackageMode.Existing && packagesLoading) ||
+    (packageMode === PackageMode.InternalStock && internalStockLoading);
+
   const stockAllocationAvailable =
     packageMode !== PackageMode.InternalStock ||
     (selectedInternalStockOrder !== null &&
@@ -259,9 +320,13 @@ export function NewOrderDetails({
           ? "Novo pacote com fornecedor selecionado"
           : "Novo pacote sem fornecedor selecionado"
         : packageMode === PackageMode.Existing
-          ? packages.find((item) => item.id === existingPackageId)?.code ?? "Pacote nao selecionado"
+          ? packagesLoading
+            ? "Carregando pacotes..."
+            : packages.find((item) => item.id === existingPackageId)?.code ?? "Pacote nao selecionado"
           : packageMode === PackageMode.InternalStock
-            ? selectedInternalStockOrder
+            ? internalStockLoading
+              ? "Carregando estoque interno..."
+              : selectedInternalStockOrder
               ? `${selectedInternalStockOrder.code} com saldo de ${selectedInternalStockOrder.availableQuantity} camisa(s)`
               : "Origem de estoque nao selecionada"
             : isPersonalUse
@@ -818,7 +883,11 @@ export function NewOrderDetails({
 
           {packageMode === PackageMode.InternalStock && (
             <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
-              {internalStockOrders.length === 0 ? (
+              {internalStockLoading ? (
+                <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
+                  Carregando pedidos de estoque...
+                </p>
+              ) : internalStockOrders.length === 0 ? (
                 <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
                   Nenhum pedido de estoque com saldo e custo unitario disponivel.
                 </p>
@@ -889,9 +958,11 @@ export function NewOrderDetails({
               <select
                 name="existingPackageId"
                 value={existingPackageId}
+                disabled={packagesLoading}
                 onChange={(event) => setExistingPackageId(event.target.value)}
                 className={fieldClassName}
               >
+                {packagesLoading && <option value="">Carregando pacotes...</option>}
                 {packages.length === 0 && <option value="">Nenhum pacote cadastrado</option>}
                 {packages.map((importPackage) => (
                   <option key={importPackage.id} value={importPackage.id}>
@@ -903,6 +974,9 @@ export function NewOrderDetails({
                   </option>
                 ))}
               </select>
+              {packagesLoading && (
+                <p className="text-xs text-neutral-500">Carregando pacotes existentes...</p>
+              )}
               <p className="text-xs text-neutral-500">
                 Ao vincular, o custo por camisa e o rastreio serao herdados automaticamente.
               </p>
@@ -1123,7 +1197,11 @@ export function NewOrderDetails({
           className="w-full"
           name="afterSubmit"
           value="open"
-          disabled={(entryMode === "quick" && quantityValue <= 0) || !stockAllocationAvailable}
+          disabled={
+            (entryMode === "quick" && quantityValue <= 0) ||
+            !stockAllocationAvailable ||
+            auxiliaryOptionsLoading
+          }
         >
           Criar e abrir pedido
         </SubmitButton>
@@ -1133,7 +1211,11 @@ export function NewOrderDetails({
           variant="outline"
           name="afterSubmit"
           value="new"
-          disabled={(entryMode === "quick" && quantityValue <= 0) || !stockAllocationAvailable}
+          disabled={
+            (entryMode === "quick" && quantityValue <= 0) ||
+            !stockAllocationAvailable ||
+            auxiliaryOptionsLoading
+          }
         >
           Criar e novo
         </SubmitButton>

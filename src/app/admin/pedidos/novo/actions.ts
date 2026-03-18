@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 
 import {
@@ -22,6 +23,7 @@ import {
   linkOrderToImportPackage,
   logAction,
   recalculateImportPackageAllocations,
+  syncImportPackageForOrder,
   upsertImportPackage,
 } from "@/lib/db/queries";
 
@@ -301,6 +303,7 @@ export async function createOrderManual(formData: FormData) {
   }
 
   let packageIdToLink: string | null = null;
+  let packageTrackingToRegister: { trackingCode: string; carrier: string } | null = null;
   if (packageMode === PackageMode.New) {
     const packageQuantity = Math.max(1, Math.round(packageQuantityInput || totalQuantity));
     packageIdToLink = await upsertImportPackage({
@@ -317,11 +320,10 @@ export async function createOrderManual(formData: FormData) {
     });
 
     if (trackingCode) {
-      try {
-        await registerShipmentTracking(trackingCode, carrier || "other");
-      } catch {
-        // Keep saved tracking even when external provider is unavailable.
-      }
+      packageTrackingToRegister = {
+        trackingCode,
+        carrier: carrier || "other",
+      };
     }
   }
 
@@ -335,7 +337,7 @@ export async function createOrderManual(formData: FormData) {
 
   if (packageIdToLink) {
     await linkOrderToImportPackage(orderId, packageIdToLink);
-    await recalculateImportPackageAllocations(packageIdToLink);
+    await syncImportPackageForOrder(packageIdToLink, orderId);
   }
 
   await logAction({
@@ -345,6 +347,32 @@ export async function createOrderManual(formData: FormData) {
       : "Criou pedido manual",
     orderId,
   });
+
+  if (packageIdToLink || packageTrackingToRegister) {
+    const backgroundPackageId = packageIdToLink;
+    const backgroundTracking = packageTrackingToRegister;
+
+    after(async () => {
+      if (backgroundTracking) {
+        try {
+          await registerShipmentTracking(
+            backgroundTracking.trackingCode,
+            backgroundTracking.carrier,
+          );
+        } catch (error) {
+          console.error("Falha ao registrar tracking apos criar pedido:", error);
+        }
+      }
+
+      if (backgroundPackageId) {
+        try {
+          await recalculateImportPackageAllocations(backgroundPackageId);
+        } catch (error) {
+          console.error("Falha ao recalcular pacote apos criar pedido:", error);
+        }
+      }
+    });
+  }
 
   if (afterSubmit === "new") {
     redirect("/admin/pedidos/novo");

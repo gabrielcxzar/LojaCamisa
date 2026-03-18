@@ -2,21 +2,28 @@
 
 import { useMemo, useState } from "react";
 
-import type { CustomerPresetRow } from "@/lib/db/queries";
-
-type Props = {
-  presets: CustomerPresetRow[];
+type CustomerPresetOption = {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  line1: string;
+  line2: string | null;
+  city: string;
+  state: string;
+  postal_code: string | null;
+  country: string;
+  last_order_at: string;
 };
 
 const fieldClassName =
   "w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
 
-function presetLabel(preset: CustomerPresetRow) {
+function presetLabel(preset: CustomerPresetOption) {
   const contact = preset.phone || preset.email || "sem contato";
   return `${preset.name} - ${contact}`;
 }
 
-export function NewOrderCustomerFields({ presets }: Props) {
+export function NewOrderCustomerFields() {
   const [selectedPresetLabel, setSelectedPresetLabel] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -28,14 +35,36 @@ export function NewOrderCustomerFields({ presets }: Props) {
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("Brasil");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [presets, setPresets] = useState<CustomerPresetOption[]>([]);
+  const [presetsLoaded, setPresetsLoaded] = useState(false);
+  const [loadingPresets, setLoadingPresets] = useState(false);
 
   const presetMap = useMemo(() => {
-    const map = new Map<string, CustomerPresetRow>();
+    const map = new Map<string, CustomerPresetOption>();
     for (const preset of presets) {
       map.set(presetLabel(preset), preset);
     }
     return map;
   }, [presets]);
+
+  async function ensurePresetsLoaded() {
+    if (presetsLoaded || loadingPresets) return;
+
+    setLoadingPresets(true);
+    try {
+      const response = await fetch("/api/admin/new-order-options?kind=customer-presets", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+
+      const data = (await response.json()) as { presets?: CustomerPresetOption[] };
+      setPresets(data.presets ?? []);
+      setPresetsLoaded(true);
+    } finally {
+      setLoadingPresets(false);
+    }
+  }
 
   function applyPreset(label: string) {
     const preset = presetMap.get(label);
@@ -60,8 +89,14 @@ export function NewOrderCustomerFields({ presets }: Props) {
           <input
             list="customer-presets"
             value={selectedPresetLabel}
+            onFocus={() => {
+              void ensurePresetsLoaded();
+            }}
             onChange={(event) => {
               const next = event.target.value;
+              if (!presetsLoaded && !loadingPresets) {
+                void ensurePresetsLoaded();
+              }
               setSelectedPresetLabel(next);
               applyPreset(next);
             }}
@@ -74,6 +109,13 @@ export function NewOrderCustomerFields({ presets }: Props) {
               return <option key={`${preset.name}-${preset.phone}-${preset.last_order_at}`} value={label} />;
             })}
           </datalist>
+          {(loadingPresets || presetsLoaded) && (
+            <p className="text-xs text-neutral-500">
+              {loadingPresets
+                ? "Carregando clientes salvos..."
+                : `${presets.length} cliente(s) salvo(s) disponiveis para preenchimento rapido.`}
+            </p>
+          )}
 
           <input
             name="name"

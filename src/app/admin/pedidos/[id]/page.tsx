@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -30,7 +28,6 @@ import {
   updateSupplierInfo,
 } from "@/app/admin/pedidos/[id]/actions";
 import { TrackingRefreshButton } from "@/components/admin/tracking-refresh-button";
-import { TrackingAutoRefresh } from "@/components/admin/tracking-auto-refresh";
 import { SupplierCostForm } from "@/components/admin/supplier-cost-form";
 import { translateTrackingStatus } from "@/lib/tracking/status-map";
 
@@ -568,10 +565,6 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                 <div className="mt-4">
                   <TrackingRefreshButton orderId={order.id} />
                 </div>
-                <TrackingAutoRefresh
-                  orderId={order.id}
-                  lastUpdateAt={shipment.last_update_at}
-                />
               </div>
             )}
           </div>

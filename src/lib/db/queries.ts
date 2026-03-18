@@ -1633,6 +1633,77 @@ export async function recalculateImportPackageAllocations(packageId: string) {
   }
 }
 
+export async function syncImportPackageForOrder(packageId: string, orderId: string) {
+  const importPackage = await db
+    .prepare<ImportPackageRow>("SELECT * FROM import_packages WHERE id = ?")
+    .get(packageId);
+  if (!importPackage) return;
+
+  const linkedOrders = await getLinkedOrdersForImportPackage(packageId);
+  const linkedOrder = linkedOrders.find((item) => item.order_id === orderId);
+  if (!linkedOrder || Number(linkedOrder.quantity) <= 0) return;
+
+  const linkedTotalQuantity = linkedOrders
+    .filter((item) => Number(item.quantity) > 0)
+    .reduce((sum, item) => sum + Number(item.quantity), 0);
+
+  const packageBaseQuantity = Math.max(
+    1,
+    Math.round(Number(importPackage.package_quantity) || linkedTotalQuantity),
+  );
+  const packageProductCost = Number(importPackage.product_cost ?? 0);
+  const packageExtraFees =
+    Number(importPackage.extra_fees ?? 0) + Number(importPackage.internal_shipping ?? 0);
+
+  const allocation = calculatePackageAllocation({
+    packageBaseQuantity,
+    productCost: packageProductCost,
+    extraFees: packageExtraFees,
+    linkedQuantity: Number(linkedOrder.quantity),
+  });
+
+  if (importPackage.supplier_id) {
+    await upsertSupplierOrder({
+      orderId: linkedOrder.order_id,
+      supplierId: importPackage.supplier_id,
+      productCost: allocation.allocatedProductCost,
+      extraFees: allocation.allocatedExtraFees,
+      packageQuantity: packageBaseQuantity,
+      unitCost: allocation.averageUnitCost,
+      totalCost: allocation.allocatedTotalCost,
+      paidAt: importPackage.paid_at ?? null,
+    });
+  }
+
+  if (importPackage.tracking_code) {
+    await upsertShipment({
+      orderId: linkedOrder.order_id,
+      trackingCode: importPackage.tracking_code,
+      carrier: importPackage.carrier ?? "other",
+      originCountry: importPackage.origin_country ?? "China",
+    });
+
+    const trackingMappedStatus = mapTrackingStatusToOrderStatus(
+      importPackage.last_status ?? "",
+    );
+    if (trackingMappedStatus) {
+      if (shouldAdvanceOrderStatus(linkedOrder.order_status, trackingMappedStatus)) {
+        await updateOrderStatus(
+          linkedOrder.order_id,
+          trackingMappedStatus,
+          `Status sincronizado pelo pacote ${importPackage.code}: ${importPackage.last_status ?? "sem status"}`,
+        );
+      }
+    } else if (shouldAdvanceOrderStatus(linkedOrder.order_status, "SHIPPED")) {
+      await updateOrderStatus(
+        linkedOrder.order_id,
+        "SHIPPED",
+        `Rastreamento vinculado ao pacote ${importPackage.code}`,
+      );
+    }
+  }
+}
+
 export async function updateImportPackageTrackingByCode(
   trackingCode: string,
   data: {
