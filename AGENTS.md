@@ -188,3 +188,9 @@ prÃ³ximo do cÃ³digo. Use o agent mais local possÃ­vel antes de cair para o
 2. Se o gargalo atravessar camadas, combine o agent local com `Banco e Queries`.
 3. Quando houver rastreio, envolva tambÃ©m `Tracking Core` ou `Tracking API`.
 4. Prefira correÃ§Ãµes pequenas e verificÃ¡veis antes de refactors amplos.
+
+## Desenvolvimento orientado por especificação (SDD)
+
+- Para mudanças não triviais, derive uma especificação a partir do pedido antes de editar o código.
+- Leia `CONTEXT.md`, `README.md` e a configuração executável; registre critérios de aceitação e quebre o trabalho em tarefas pequenas.
+- Implemente com testes quando possível, valide o comportamento e revise o diff antes de concluir.
