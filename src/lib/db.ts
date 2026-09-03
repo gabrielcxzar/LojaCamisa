@@ -265,6 +265,19 @@ const schemaSql = `
   CREATE INDEX IF NOT EXISTS idx_logs_order_id ON action_logs(order_id);
 `;
 
+const performanceIndexesSql = `
+  CREATE INDEX IF NOT EXISTS idx_shipments_order_id ON shipments(order_id);
+  CREATE INDEX IF NOT EXISTS idx_shipments_tracking_code ON shipments(tracking_code);
+  CREATE INDEX IF NOT EXISTS idx_payments_order_id ON payments(order_id);
+  CREATE INDEX IF NOT EXISTS idx_payments_direction_created_at ON payments(direction, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
+  CREATE INDEX IF NOT EXISTS idx_order_status_history_order_id ON order_status_history(order_id);
+  CREATE INDEX IF NOT EXISTS idx_supplier_orders_order_id ON supplier_orders(order_id);
+  CREATE INDEX IF NOT EXISTS idx_order_packages_order_id ON order_packages(order_id);
+  CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);
+  CREATE INDEX IF NOT EXISTS idx_orders_address_id ON orders(address_id);
+`;
+
 function normalizeParam(param: DbParam): string | number | boolean | null {
   if (param === undefined) return null;
   if (param instanceof Date) return param.toISOString();
@@ -306,6 +319,56 @@ let postgresClient: Sql | null = null;
 let schemaInitialized = false;
 let schemaInitPromise: Promise<void> | null = null;
 
+async function isSchemaReady(client: Sql) {
+  const result = await client.unsafe<
+    Array<{
+      orders_ready: boolean;
+      supplier_orders_ready: boolean;
+      import_packages_ready: boolean;
+      internal_stock_ready: boolean;
+    }>
+  >(
+    `
+    SELECT
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'orders'
+          AND column_name = 'is_stock_order'
+      ) AS orders_ready,
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'supplier_orders'
+          AND column_name = 'package_quantity'
+      ) AS supplier_orders_ready,
+      EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'import_packages'
+          AND column_name = 'internal_shipping'
+      ) AS import_packages_ready,
+      EXISTS (
+        SELECT 1
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_name = 'internal_stock_allocations'
+      ) AS internal_stock_ready
+    `,
+  );
+
+  const row = result[0];
+  return Boolean(
+    row?.orders_ready &&
+      row?.supplier_orders_ready &&
+      row?.import_packages_ready &&
+      row?.internal_stock_ready,
+  );
+}
+
 function getPostgresClient() {
   if (!postgresClient) {
     const poolMax = Number(process.env.DB_POOL_MAX ?? 5);
@@ -336,17 +399,28 @@ export async function initSchema() {
   if (!schemaInitPromise) {
     schemaInitPromise = (async () => {
       const client = getPostgresClient();
+      const ready = await isSchemaReady(client);
+      if (ready) {
+        schemaInitialized = true;
+        return;
+      }
+
       await client.unsafe(schemaSql);
+      await client.unsafe(performanceIndexesSql);
       schemaInitialized = true;
     })();
   }
   await schemaInitPromise;
 }
 
+export async function ensurePerformanceIndexes() {
+  const client = getPostgresClient();
+  await client.unsafe(performanceIndexesSql);
+}
+
 function baseExecutor(): QueryExecutor {
   return {
     async query<T extends Record<string, unknown>>(query: string, params: DbParam[]) {
-      await initSchema();
       const client = getPostgresClient();
       const pgQuery = replacePositionalParams(query);
       const rows = await client.unsafe(
@@ -356,7 +430,6 @@ function baseExecutor(): QueryExecutor {
       return rows as unknown as T[];
     },
     async exec(query: string) {
-      await initSchema();
       const client = getPostgresClient();
       await client.unsafe(query);
     },
@@ -368,7 +441,6 @@ function activeExecutor() {
 }
 
 async function runInTransaction<T>(fn: () => Promise<T> | T): Promise<T> {
-  await initSchema();
   const root = getPostgresClient();
   const value = await root.begin(async (transactionClient) => {
     const transactionExecutor: QueryExecutor = {

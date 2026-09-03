@@ -2,6 +2,11 @@
 
 import { useMemo, useState } from "react";
 
+import {
+  calculateMargin,
+  calculatePackageCosts,
+} from "@/modules/shared/domain/calculators";
+
 function parseNumber(value: string) {
   const parsed = Number(value.replace(",", "."));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -51,21 +56,33 @@ export function BudgetCalculator() {
     const targetSale = Math.max(0, parseNumber(targetSaleInput));
     const roundStep = Math.max(0, parseNumber(roundStepInput));
 
-    const packageFinalCost = productCost + extraFees + internalShipping;
-    const unitCost = packageFinalCost / packageQuantity;
+    const packageCosts = calculatePackageCosts({
+      packageQuantity,
+      productCost,
+      extraFees,
+      internalShipping,
+      orderQuantity: 1,
+    });
+    const unitCost = packageCosts.averageUnitCost;
     const saleWithoutRound = unitCost * (1 + markup / 100);
     const suggestedSale =
       roundStep > 0 ? Math.ceil(saleWithoutRound / roundStep) * roundStep : saleWithoutRound;
-    const profitPerShirt = Math.max(0, suggestedSale - unitCost);
-    const realMargin = suggestedSale > 0 ? (profitPerShirt / suggestedSale) * 100 : 0;
+    const { profit: rawProfitPerShirt, margin: realMargin } = calculateMargin({
+      revenue: suggestedSale,
+      cost: unitCost,
+    });
+    const profitPerShirt = Math.max(0, rawProfitPerShirt);
     const minimumSale = unitCost;
     const reverseMarkup = unitCost > 0 ? ((targetSale / unitCost) - 1) * 100 : 0;
     const reverseProfitPerShirt = targetSale - unitCost;
-    const reverseMargin = targetSale > 0 ? (reverseProfitPerShirt / targetSale) * 100 : 0;
+    const reverseMargin = calculateMargin({
+      revenue: targetSale,
+      cost: unitCost,
+    }).margin;
 
     return {
       packageQuantity,
-      packageFinalCost,
+      packageFinalCost: packageCosts.packageFinalCost,
       unitCost,
       markup,
       minimumSale,

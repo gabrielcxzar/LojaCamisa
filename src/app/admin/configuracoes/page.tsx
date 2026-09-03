@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import { Container } from "@/components/layout/container";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { getSetting } from "@/lib/db/queries";

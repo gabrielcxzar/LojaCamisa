@@ -1,8 +1,12 @@
-export const dynamic = "force-dynamic";
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 
+import {
+  calculateMargin,
+  calculatePackageCosts,
+} from "@/modules/shared/domain/calculators";
+import { PaymentDirection } from "@/modules/shared/domain/enums";
 import { Container } from "@/components/layout/container";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
@@ -25,7 +29,6 @@ import {
   updateSupplierInfo,
 } from "@/app/admin/pedidos/[id]/actions";
 import { TrackingRefreshButton } from "@/components/admin/tracking-refresh-button";
-import { TrackingAutoRefresh } from "@/components/admin/tracking-auto-refresh";
 import { SupplierCostForm } from "@/components/admin/supplier-cost-form";
 import { translateTrackingStatus } from "@/lib/tracking/status-map";
 
@@ -47,30 +50,216 @@ type TimelineEvent = {
   date: string;
 };
 
+function SectionFallback({ title }: { title: string }) {
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      <div className="mt-4 h-24 animate-pulse rounded-xl border border-neutral-200 bg-neutral-50" />
+    </div>
+  );
+}
+
+async function OrderLogsSection({ orderId }: { orderId: string }) {
+  const logs = await listActionLogs(orderId);
+
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+      <h2 className="text-lg font-semibold">Log de acoes</h2>
+      <div className="mt-4 space-y-3 text-sm text-neutral-600">
+        {logs.length === 0 && (
+          <p className="text-sm text-neutral-500">
+            Nenhuma acao registrada.
+          </p>
+        )}
+        {logs.map((log) => (
+          <div key={log.id} className="flex items-center justify-between">
+            <div>
+              <p className="font-semibold">{log.action}</p>
+              <p className="text-xs text-neutral-500">{log.user_email}</p>
+            </div>
+            <span className="text-xs text-neutral-500">
+              {new Date(log.created_at).toLocaleString("pt-BR")}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+async function ImportPackageOrdersSection({
+  packageId,
+  currentOrderId,
+}: {
+  packageId: string;
+  currentOrderId: string;
+}) {
+  const importPackageOrders = await listImportPackageOrders(packageId);
+
+  if (importPackageOrders.length === 0) return null;
+
+  return (
+    <div className="mt-4 space-y-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+      <p className="font-semibold text-neutral-900">Clientes no mesmo pacote</p>
+      {importPackageOrders.map((linkedOrder) => {
+        const isCurrent = linkedOrder.order_id === currentOrderId;
+        const linkedProfit =
+          Number(linkedOrder.total_amount) - Number(linkedOrder.total_cost);
+
+        return (
+          <Link
+            key={linkedOrder.order_id}
+            href={`/admin/pedidos/${linkedOrder.order_id}`}
+            prefetch={false}
+            className={`block rounded-lg border px-3 py-2 transition hover:border-neutral-400 ${
+              isCurrent
+                ? "border-neutral-300 bg-white"
+                : "border-neutral-200 bg-white/70"
+            }`}
+          >
+            <p className="font-semibold text-neutral-900">
+              {linkedOrder.customer_name} {isCurrent ? "(pedido atual)" : ""}
+            </p>
+            <p>
+              {linkedOrder.code} - {Number(linkedOrder.quantity)} camisa(s) -{" "}
+              {statusLabel[linkedOrder.status]}
+            </p>
+            <p>
+              Venda R$ {Number(linkedOrder.total_amount).toFixed(2)} | Custo R${" "}
+              {Number(linkedOrder.total_cost).toFixed(2)} | Lucro R${" "}
+              {linkedProfit.toFixed(2)}
+            </p>
+          </Link>
+        );
+      })}
+    </div>
+  );
+}
+
+async function SupplierCostSection({
+  orderId,
+  orderQuantity,
+  totalSold,
+  isPersonalUse,
+  isStockOrder,
+  importPackage,
+  internalStockAllocation,
+  supplierOrder,
+}: {
+  orderId: string;
+  orderQuantity: number;
+  totalSold: number;
+  isPersonalUse: boolean;
+  isStockOrder: boolean;
+  importPackage: {
+    id: string;
+    code: string;
+    linked_orders: number;
+    package_quantity: number | string | null;
+  } | null;
+  internalStockAllocation: {
+    source_order_code: string;
+    source_customer_name: string;
+    quantity: number | string;
+    unit_cost: number | string;
+    total_cost: number | string;
+  } | null;
+  supplierOrder: {
+    supplier_id: string;
+    package_quantity: number | string;
+    product_cost: number | string;
+    total_cost: number | string;
+    extra_fees: number | string;
+    unit_cost: number | string;
+    paid_at: string | null;
+  } | null;
+}) {
+  const [suppliers, importPackageOrders] = await Promise.all([
+    listSuppliers(),
+    importPackage ? listImportPackageOrders(importPackage.id) : Promise.resolve([]),
+  ]);
+
+  const importPackageTotalQuantity = importPackageOrders.reduce(
+    (sum, linkedOrder) => sum + Number(linkedOrder.quantity ?? 0),
+    0,
+  );
+
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-white p-6">
+      <h2 className="text-lg font-semibold">Financeiro do pedido</h2>
+      <SupplierCostForm
+        action={updateSupplierInfo}
+        orderId={orderId}
+        orderQuantity={orderQuantity}
+        totalSold={totalSold}
+        isPersonalUse={isPersonalUse}
+        isStockOrder={isStockOrder}
+        packageInfo={
+          importPackage
+            ? {
+                code: importPackage.code,
+                linkedOrders: Number(importPackage.linked_orders),
+                totalQuantity: Math.max(
+                  Number(importPackage.package_quantity ?? 0),
+                  importPackageTotalQuantity,
+                  orderQuantity,
+                ),
+              }
+            : null
+        }
+        internalStockAllocation={
+          internalStockAllocation
+            ? {
+                sourceOrderCode: internalStockAllocation.source_order_code,
+                sourceCustomerName: internalStockAllocation.source_customer_name,
+                quantity: Number(internalStockAllocation.quantity),
+                unitCost: Number(internalStockAllocation.unit_cost),
+                totalCost: Number(internalStockAllocation.total_cost),
+              }
+            : null
+        }
+        suppliers={suppliers.map((supplier) => ({
+          id: supplier.id,
+          name: supplier.name,
+        }))}
+        initial={{
+          supplierId: supplierOrder?.supplier_id ?? suppliers[0]?.id ?? null,
+          packageQuantity: supplierOrder?.package_quantity
+            ? Number(supplierOrder.package_quantity)
+            : orderQuantity,
+          productCost: supplierOrder?.product_cost
+            ? Number(supplierOrder.product_cost)
+            : supplierOrder?.total_cost
+              ? Number(supplierOrder.total_cost)
+              : 0,
+          extraFees: supplierOrder?.extra_fees ? Number(supplierOrder.extra_fees) : 0,
+          unitCost: supplierOrder?.unit_cost ? Number(supplierOrder.unit_cost) : 0,
+          totalCost: supplierOrder?.total_cost ? Number(supplierOrder.total_cost) : 0,
+          paidAt: supplierOrder?.paid_at
+            ? new Date(supplierOrder.paid_at).toISOString().slice(0, 10)
+            : null,
+        }}
+      />
+    </div>
+  );
+}
+
 export default async function OrderDetailPage({ params }: OrderDetailProps) {
   await requireAdmin();
   const resolvedParams = await Promise.resolve(params);
   const data = await getOrderDetail(resolvedParams.id);
   if (!data) return notFound();
+  if (!data.customer || !data.address) return notFound();
 
   const { order, customer, address, items, supplierOrder, shipment, statusHistory, payments } = data;
 
-  const [suppliers, logs, stalledSetting, importPackage, internalStockAllocation, stockEntryBalance] =
+  const [stalledSetting, importPackage, internalStockAllocation, stockEntryBalance] =
     await Promise.all([
-    listSuppliers(),
-    listActionLogs(order.id),
     getSetting("stalled_days"),
     getImportPackageByOrderId(order.id),
     getInternalStockAllocationBySaleOrderId(order.id),
     getInternalStockAvailabilityBySourceOrderId(order.id),
   ]);
-  const importPackageOrders = importPackage
-    ? await listImportPackageOrders(importPackage.id)
-    : [];
-  const importPackageTotalQuantity = importPackageOrders.reduce(
-    (sum, linkedOrder) => sum + Number(linkedOrder.quantity ?? 0),
-    0,
-  );
   const stalledDays = stalledSetting ? Number(stalledSetting.value) : 7;
   const orderQuantity = items.reduce((sum, item) => sum + Number(item.quantity), 0);
   const stockEntryAllocated = stockEntryBalance
@@ -87,22 +276,27 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
   const supplierUnitCost = supplierOrder?.unit_cost
     ? Number(supplierOrder.unit_cost)
     : supplierPackageQuantity > 0
-      ? (supplierProductCost + supplierExtraFees) / supplierPackageQuantity
+      ? calculatePackageCosts({
+          packageQuantity: supplierPackageQuantity,
+          productCost: supplierProductCost,
+          extraFees: supplierExtraFees,
+        }).averageUnitCost
       : 0;
   const totalCost = supplierOrder?.total_cost ? Number(supplierOrder.total_cost) : 0;
   const totalAmount = Number(order.total_amount);
   const incoming = payments
-    .filter((p) => p.direction === "INCOMING")
+    .filter((p) => p.direction === PaymentDirection.Incoming)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const outgoing = payments
-    .filter((p) => p.direction === "OUTGOING")
+    .filter((p) => p.direction === PaymentDirection.Outgoing)
     .reduce((sum, p) => sum + Number(p.amount), 0);
   const pending = totalAmount - incoming;
-  const profit = totalAmount - totalCost;
-  const margin = totalAmount ? (profit / totalAmount) * 100 : 0;
   const noRevenueMode = order.is_personal_use === 1 || order.is_stock_order === 1;
-  const displayedProfit = noRevenueMode ? 0 : profit;
-  const displayedMargin = noRevenueMode ? 0 : margin;
+  const { profit: displayedProfit, margin: displayedMargin } = calculateMargin({
+    revenue: totalAmount,
+    cost: totalCost,
+    noRevenueMode,
+  });
   const lastUpdate = shipment?.last_update_at ?? order.updated_at;
   const currentTimeMs = Date.parse(new Date().toISOString());
   const daysStalled = lastUpdate
@@ -124,7 +318,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
     })),
     ...payments.map((payment) => ({
       label:
-        payment.direction === "INCOMING"
+        payment.direction === PaymentDirection.Incoming
           ? `Pagamento recebido (R$ ${Number(payment.amount).toFixed(2)})`
           : `Pagamento fornecedor (R$ ${Number(payment.amount).toFixed(2)})`,
       date: payment.paid_at ?? payment.created_at,
@@ -294,27 +488,9 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-lg font-semibold">Log de acoes</h2>
-            <div className="mt-4 space-y-3 text-sm text-neutral-600">
-              {logs.length === 0 && (
-                <p className="text-sm text-neutral-500">
-                  Nenhuma acao registrada.
-                </p>
-              )}
-              {logs.map((log) => (
-                <div key={log.id} className="flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold">{log.action}</p>
-                    <p className="text-xs text-neutral-500">{log.user_email}</p>
-                  </div>
-                  <span className="text-xs text-neutral-500">
-                    {new Date(log.created_at).toLocaleString("pt-BR")}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <Suspense fallback={<SectionFallback title="Log de acoes" />}>
+            <OrderLogsSection orderId={order.id} />
+          </Suspense>
         </div>
 
         <div className="space-y-6">
@@ -343,17 +519,25 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                   Cancelar pedido
                 </SubmitButton>
               </form>
-              <form action={deleteOrderAction}>
-                <input type="hidden" name="orderId" value={order.id} />
-                <SubmitButton
-                  pendingLabel="Excluindo..."
-                  variant="outline"
-                  className="w-full border-red-200 bg-red-50 py-2 text-red-600 hover:border-red-300 hover:bg-red-100 hover:text-red-700"
-                >
-                  Excluir pedido
-                </SubmitButton>
-              </form>
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-red-200 bg-red-50/60 p-6">
+            <h2 className="text-lg font-semibold text-red-900">Zona de perigo</h2>
+            <p className="mt-4 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm text-red-700">
+              Excluir remove o pedido e os registros vinculados. Use apenas quando tiver certeza de
+              que o pedido nao deve mais existir no sistema.
+            </p>
+            <form action={deleteOrderAction} className="mt-4">
+              <input type="hidden" name="orderId" value={order.id} />
+              <SubmitButton
+                pendingLabel="Excluindo..."
+                variant="outline"
+                className="w-full border-red-300 bg-red-100 py-2 text-red-700 hover:border-red-400 hover:bg-red-200 hover:text-red-800"
+              >
+                Excluir pedido permanentemente
+              </SubmitButton>
+            </form>
           </div>
 
           {importPackage && (
@@ -378,41 +562,12 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                 </p>
                 {importPackage.tracking_code && <p>Rastreio: {importPackage.tracking_code}</p>}
               </div>
-              {importPackageOrders.length > 0 && (
-                <div className="mt-4 space-y-2 rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
-                  <p className="font-semibold text-neutral-900">Clientes no mesmo pacote</p>
-                  {importPackageOrders.map((linkedOrder) => {
-                    const isCurrent = linkedOrder.order_id === order.id;
-                    const linkedProfit =
-                      Number(linkedOrder.total_amount) - Number(linkedOrder.total_cost);
-
-                    return (
-                      <Link
-                        key={linkedOrder.order_id}
-                        href={`/admin/pedidos/${linkedOrder.order_id}`}
-                        className={`block rounded-lg border px-3 py-2 transition hover:border-neutral-400 ${
-                          isCurrent
-                            ? "border-neutral-300 bg-white"
-                            : "border-neutral-200 bg-white/70"
-                        }`}
-                      >
-                        <p className="font-semibold text-neutral-900">
-                          {linkedOrder.customer_name} {isCurrent ? "(pedido atual)" : ""}
-                        </p>
-                        <p>
-                          {linkedOrder.code} - {Number(linkedOrder.quantity)} camisa(s) -{" "}
-                          {statusLabel[linkedOrder.status]}
-                        </p>
-                        <p>
-                          Venda R$ {Number(linkedOrder.total_amount).toFixed(2)} | Custo R${" "}
-                          {Number(linkedOrder.total_cost).toFixed(2)} | Lucro R${" "}
-                          {linkedProfit.toFixed(2)}
-                        </p>
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
+              <Suspense fallback={<div className="mt-4 h-24 animate-pulse rounded-xl border border-neutral-200 bg-neutral-50" />}>
+                <ImportPackageOrdersSection
+                  packageId={importPackage.id}
+                  currentOrderId={order.id}
+                />
+              </Suspense>
             </div>
           )}
 
@@ -424,6 +579,7 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                   Pedido origem:{" "}
                   <Link
                     href={`/admin/pedidos/${internalStockAllocation.source_order_id}`}
+                    prefetch={false}
                     className="font-semibold text-neutral-900 underline underline-offset-4"
                   >
                     {internalStockAllocation.source_order_code}
@@ -458,56 +614,49 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
             </div>
           )}
 
-          <div className="rounded-2xl border border-neutral-200 bg-white p-6">
-            <h2 className="text-lg font-semibold">Financeiro do pedido</h2>
-            <SupplierCostForm
-              action={updateSupplierInfo}
+          <Suspense fallback={<SectionFallback title="Financeiro do pedido" />}>
+            <SupplierCostSection
               orderId={order.id}
               orderQuantity={orderQuantity}
               totalSold={totalAmount}
               isPersonalUse={order.is_personal_use === 1}
               isStockOrder={order.is_stock_order === 1}
-              packageInfo={
+              importPackage={
                 importPackage
                   ? {
+                      id: importPackage.id,
                       code: importPackage.code,
-                      linkedOrders: Number(importPackage.linked_orders),
-                      totalQuantity: Math.max(
-                        Number(importPackage.package_quantity ?? 0),
-                        importPackageTotalQuantity,
-                        orderQuantity,
-                      ),
+                      linked_orders: importPackage.linked_orders,
+                      package_quantity: importPackage.package_quantity,
                     }
                   : null
               }
               internalStockAllocation={
                 internalStockAllocation
                   ? {
-                      sourceOrderCode: internalStockAllocation.source_order_code,
-                      sourceCustomerName: internalStockAllocation.source_customer_name,
-                      quantity: Number(internalStockAllocation.quantity),
-                      unitCost: Number(internalStockAllocation.unit_cost),
-                      totalCost: Number(internalStockAllocation.total_cost),
+                      source_order_code: internalStockAllocation.source_order_code,
+                      source_customer_name: internalStockAllocation.source_customer_name,
+                      quantity: internalStockAllocation.quantity,
+                      unit_cost: internalStockAllocation.unit_cost,
+                      total_cost: internalStockAllocation.total_cost,
                     }
                   : null
               }
-              suppliers={suppliers.map((supplier) => ({
-                id: supplier.id,
-                name: supplier.name,
-              }))}
-              initial={{
-                supplierId: supplierOrder?.supplier_id ?? suppliers[0]?.id ?? null,
-                packageQuantity: supplierOrder?.package_quantity ?? orderQuantity,
-                productCost: supplierOrder?.product_cost ?? supplierOrder?.total_cost ?? 0,
-                extraFees: supplierOrder?.extra_fees ?? 0,
-                unitCost: supplierOrder?.unit_cost ?? 0,
-                totalCost: supplierOrder?.total_cost ?? 0,
-                paidAt: supplierOrder?.paid_at
-                  ? new Date(supplierOrder.paid_at).toISOString().slice(0, 10)
-                  : null,
-              }}
+              supplierOrder={
+                supplierOrder
+                  ? {
+                      supplier_id: supplierOrder.supplier_id,
+                      package_quantity: supplierOrder.package_quantity,
+                      product_cost: supplierOrder.product_cost,
+                      total_cost: supplierOrder.total_cost,
+                      extra_fees: supplierOrder.extra_fees,
+                      unit_cost: supplierOrder.unit_cost,
+                      paid_at: supplierOrder.paid_at,
+                    }
+                  : null
+              }
             />
-          </div>
+          </Suspense>
 
           <div className="rounded-2xl border border-neutral-200 bg-white p-6">
             <h2 className="text-lg font-semibold">Rastreamento</h2>
@@ -550,10 +699,6 @@ export default async function OrderDetailPage({ params }: OrderDetailProps) {
                 <div className="mt-4">
                   <TrackingRefreshButton orderId={order.id} />
                 </div>
-                <TrackingAutoRefresh
-                  orderId={order.id}
-                  lastUpdateAt={shipment.last_update_at}
-                />
               </div>
             )}
           </div>

@@ -1,7 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import {
+  calculateOrderPricing,
+  calculatePackageCosts,
+  getDefaultPaymentPercent,
+} from "@/modules/shared/domain/calculators";
+import { PackageMode, PaymentType } from "@/modules/shared/domain/enums";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 type ProductOption = {
@@ -36,8 +42,6 @@ type InternalStockOrderOption = {
 type Props = {
   products: ProductOption[];
   suppliers: SupplierOption[];
-  packages: ImportPackageOption[];
-  internalStockOrders: InternalStockOrderOption[];
 };
 
 type QuickItemInput = {
@@ -53,6 +57,10 @@ function parseNumber(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function sanitizeNumericInput(value: string) {
+  return value.replace(/\D/g, "");
+}
+
 function formatMoney(value: number) {
   return value.toFixed(2);
 }
@@ -61,19 +69,28 @@ function formatPercent(value: number) {
   return value.toFixed(2);
 }
 
-function defaultPercentByPaymentType(paymentType: string) {
-  if (paymentType === "FULL") return 100;
-  if (paymentType === "DEPOSIT_50") return 50;
-  return 0;
-}
-
 const SHIRT_SIZES = ["PP", "P", "M", "G", "GG"];
+const fieldClassName =
+  "w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+const compactFieldClassName =
+  "w-full rounded-lg border border-neutral-200 bg-white px-2.5 py-1.5 text-sm font-medium text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+const sectionCardClassName =
+  "rounded-[26px] border border-neutral-200 bg-white/90 p-4 shadow-sm shadow-neutral-100";
+const sectionTitleClassName = "text-base font-semibold text-neutral-900";
+const helperBadgeClassName =
+  "text-[0.65rem] uppercase tracking-[0.3em] text-neutral-500";
+const summaryStatCardClassName =
+  "rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600";
+
+function paymentTypeLabel(paymentType: PaymentType) {
+  if (paymentType === PaymentType.Full) return "Pagamento integral";
+  if (paymentType === PaymentType.Deposit50) return "Entrada de 50%";
+  return "Sem pagamento inicial";
+}
 
 export function NewOrderDetails({
   products,
   suppliers,
-  packages,
-  internalStockOrders,
 }: Props) {
   const [entryMode, setEntryMode] = useState<"quick" | "advanced">("quick");
   const [productMode, setProductMode] = useState<"custom" | "existing">("custom");
@@ -96,28 +113,28 @@ export function NewOrderDetails({
   ]);
   const [nextQuickItemId, setNextQuickItemId] = useState(2);
   const [orderTotalInput, setOrderTotalInput] = useState("");
-  const [paymentType, setPaymentType] = useState("DEPOSIT_50");
+  const [paymentType, setPaymentType] = useState<PaymentType>(PaymentType.Deposit50);
   const [amountPaidPercentInput, setAmountPaidPercentInput] = useState("50.00");
   const [amountPaidInput, setAmountPaidInput] = useState("");
   const [syncSource, setSyncSource] = useState<"percent" | "amount">("percent");
   const [isPersonalUse, setIsPersonalUse] = useState(false);
   const [isStockOrder, setIsStockOrder] = useState(false);
 
-  const [packageMode, setPackageMode] = useState<
-    "new" | "existing" | "none" | "internal_stock"
-  >(
-    "new",
-  );
-  const [existingPackageId, setExistingPackageId] = useState(packages[0]?.id ?? "");
-  const [stockSourceOrderId, setStockSourceOrderId] = useState(
-    internalStockOrders[0]?.id ?? "",
-  );
+  const [packageMode, setPackageMode] = useState<PackageMode>(PackageMode.New);
+  const [existingPackageId, setExistingPackageId] = useState("");
+  const [stockSourceOrderId, setStockSourceOrderId] = useState("");
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "");
   const [packageQuantityInput, setPackageQuantityInput] = useState("1");
   const [productCostInput, setProductCostInput] = useState("");
   const [extraFeesInput, setExtraFeesInput] = useState("0.00");
   const [internalShippingInput, setInternalShippingInput] = useState("0.00");
   const [showPackageAdvanced, setShowPackageAdvanced] = useState(false);
+  const [packages, setPackages] = useState<ImportPackageOption[]>([]);
+  const [packagesLoaded, setPackagesLoaded] = useState(false);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+  const [internalStockOrders, setInternalStockOrders] = useState<InternalStockOrderOption[]>([]);
+  const [internalStockLoaded, setInternalStockLoaded] = useState(false);
+  const [internalStockLoading, setInternalStockLoading] = useState(false);
 
   const productPriceMap = useMemo(() => {
     const map = new Map<string, number>();
@@ -155,42 +172,29 @@ export function NewOrderDetails({
   }, [quickItems]);
 
   const effectiveUnitPrice = useMemo(() => {
-    const totalInput = parseNumber(orderTotalInput);
-    if (totalInput > 0 && quantityValue > 0) {
-      return totalInput / quantityValue;
-    }
-
-    if (productMode === "existing") {
-      return productPriceMap.get(productSlug) ?? 0;
-    }
-
-    return 0;
+    return calculateOrderPricing({
+      totalAmount: parseNumber(orderTotalInput),
+      fallbackUnitPrice: productMode === "existing" ? (productPriceMap.get(productSlug) ?? 0) : 0,
+      quantity: quantityValue,
+    }).unitPrice;
   }, [orderTotalInput, productMode, productPriceMap, productSlug, quantityValue]);
 
   const totalOrder = useMemo(() => {
-    const totalInput = parseNumber(orderTotalInput);
-    if (totalInput > 0) return totalInput;
-    return quantityValue * effectiveUnitPrice;
+    return calculateOrderPricing({
+      totalAmount: parseNumber(orderTotalInput),
+      fallbackUnitPrice: effectiveUnitPrice,
+      quantity: quantityValue,
+    }).total;
   }, [effectiveUnitPrice, orderTotalInput, quantityValue]);
 
   const packageSummary = useMemo(() => {
-    const packageQuantity = Math.max(
-      1,
-      Math.round(parseNumber(packageQuantityInput) || quantityValue),
-    );
-    const productCost = Math.max(0, parseNumber(productCostInput));
-    const extraFees = Math.max(0, parseNumber(extraFeesInput));
-    const internalShipping = Math.max(0, parseNumber(internalShippingInput));
-    const packageFinalCost = productCost + extraFees + internalShipping;
-    const averageUnitCost = packageFinalCost / packageQuantity;
-    const allocatedCost = averageUnitCost * quantityValue;
-
-    return {
-      packageQuantity,
-      packageFinalCost,
-      averageUnitCost,
-      allocatedCost,
-    };
+    return calculatePackageCosts({
+      packageQuantity: Math.max(1, Math.round(parseNumber(packageQuantityInput) || quantityValue)),
+      productCost: Math.max(0, parseNumber(productCostInput)),
+      extraFees: Math.max(0, parseNumber(extraFeesInput)),
+      internalShipping: Math.max(0, parseNumber(internalShippingInput)),
+      orderQuantity: quantityValue,
+    });
   }, [
     extraFeesInput,
     internalShippingInput,
@@ -204,8 +208,69 @@ export function NewOrderDetails({
     [internalStockOrders, stockSourceOrderId],
   );
 
+  async function ensurePackagesLoaded() {
+    if (packagesLoaded || packagesLoading) return;
+
+    setPackagesLoading(true);
+    try {
+      const response = await fetch("/api/admin/new-order-options?kind=packages", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+
+      const data = (await response.json()) as { packages?: ImportPackageOption[] };
+      const nextPackages = data.packages ?? [];
+      setPackages(nextPackages);
+      setPackagesLoaded(true);
+      if (!existingPackageId && nextPackages[0]?.id) {
+        setExistingPackageId(nextPackages[0].id);
+      }
+    } finally {
+      setPackagesLoading(false);
+    }
+  }
+
+  async function ensureInternalStockLoaded() {
+    if (internalStockLoaded || internalStockLoading) return;
+
+    setInternalStockLoading(true);
+    try {
+      const response = await fetch("/api/admin/new-order-options?kind=internal-stock", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+
+      const data = (await response.json()) as { internalStockOrders?: InternalStockOrderOption[] };
+      const nextOrders = data.internalStockOrders ?? [];
+      setInternalStockOrders(nextOrders);
+      setInternalStockLoaded(true);
+      if (!stockSourceOrderId && nextOrders[0]?.id) {
+        setStockSourceOrderId(nextOrders[0].id);
+      }
+    } finally {
+      setInternalStockLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (packageMode === PackageMode.Existing) {
+      void ensurePackagesLoaded();
+      return;
+    }
+
+    if (packageMode === PackageMode.InternalStock) {
+      void ensureInternalStockLoaded();
+    }
+  }, [packageMode]);
+
+  const auxiliaryOptionsLoading =
+    (packageMode === PackageMode.Existing && packagesLoading) ||
+    (packageMode === PackageMode.InternalStock && internalStockLoading);
+
   const stockAllocationAvailable =
-    packageMode !== "internal_stock" ||
+    packageMode !== PackageMode.InternalStock ||
     (selectedInternalStockOrder !== null &&
       quantityValue > 0 &&
       selectedInternalStockOrder.availableQuantity >= quantityValue);
@@ -227,6 +292,80 @@ export function NewOrderDetails({
     };
   }, [amountPaidInput, amountPaidPercentInput, syncSource, totalOrder]);
 
+  const effectiveFlowSummary = useMemo(() => {
+    const orderType = isPersonalUse
+      ? "Uso pessoal"
+      : isStockOrder
+        ? "Entrada para estoque"
+        : "Pedido comercial";
+
+    const revenueMode = isPersonalUse
+      ? "Fora de faturamento e lucro"
+      : isStockOrder
+        ? "Sem venda registrada agora"
+        : `Faturamento ativo com ${paymentTypeLabel(paymentType)}`;
+
+    const packageModeLabel =
+      packageMode === PackageMode.New
+        ? "Novo pacote"
+        : packageMode === PackageMode.Existing
+          ? "Pacote existente"
+          : packageMode === PackageMode.InternalStock
+            ? "Baixa de estoque interno"
+            : "Sem pacote";
+
+    const packageDetail =
+      packageMode === PackageMode.New
+        ? supplierId
+          ? "Novo pacote com fornecedor selecionado"
+          : "Novo pacote sem fornecedor selecionado"
+        : packageMode === PackageMode.Existing
+          ? packagesLoading
+            ? "Carregando pacotes..."
+            : packages.find((item) => item.id === existingPackageId)?.code ?? "Pacote nao selecionado"
+          : packageMode === PackageMode.InternalStock
+            ? internalStockLoading
+              ? "Carregando estoque interno..."
+              : selectedInternalStockOrder
+              ? `${selectedInternalStockOrder.code} com saldo de ${selectedInternalStockOrder.availableQuantity} camisa(s)`
+              : "Origem de estoque nao selecionada"
+            : isPersonalUse
+              ? "Permitido para uso pessoal"
+              : "Pedido comercial sem pacote";
+
+    const primaryWarning =
+      entryMode === "quick" && quantityValue <= 0
+        ? "Adicione pelo menos uma camisa com quantidade valida."
+        : !stockAllocationAvailable
+          ? "A quantidade do pedido esta maior que o saldo disponivel no estoque interno."
+          : !isPersonalUse && !isStockOrder && totalOrder <= 0
+            ? "Informe o valor vendido total antes de criar o pedido."
+            : packageMode === PackageMode.None && !isPersonalUse
+              ? "Pedido comercial precisa de pacote ou baixa de estoque."
+              : null;
+
+    return {
+      orderType,
+      revenueMode,
+      packageModeLabel,
+      packageDetail,
+      primaryWarning,
+    };
+  }, [
+    existingPackageId,
+    isPersonalUse,
+    isStockOrder,
+    packageMode,
+    packages,
+    paymentType,
+    quantityValue,
+    selectedInternalStockOrder,
+    stockAllocationAvailable,
+    supplierId,
+    totalOrder,
+    entryMode,
+  ]);
+
   function syncAmountFromPercent(percentText: string) {
     setSyncSource("percent");
     setAmountPaidPercentInput(percentText);
@@ -238,8 +377,8 @@ export function NewOrderDetails({
   }
 
   function handlePaymentTypeChange(value: string) {
-    setPaymentType(value);
-    const defaultPercent = defaultPercentByPaymentType(value);
+    setPaymentType(value as PaymentType);
+    const defaultPercent = getDefaultPaymentPercent(value);
     setSyncSource("percent");
     setAmountPaidPercentInput(formatPercent(defaultPercent));
   }
@@ -305,11 +444,14 @@ export function NewOrderDetails({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 lg:space-y-5">
       <input type="hidden" name="entryMode" value={entryMode} />
-      <section>
-        <h2 className="text-lg font-semibold">Modo de cadastro</h2>
-        <div className="mt-4 grid gap-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600 sm:grid-cols-2">
+      <section className={sectionCardClassName}>
+        <div className="flex items-center justify-between">
+          <h2 className={sectionTitleClassName}>Modo de cadastro</h2>
+          <span className={helperBadgeClassName}>Entrada</span>
+        </div>
+        <div className="mt-3 grid gap-2.5 rounded-2xl border border-neutral-200 p-3 text-sm text-neutral-600 sm:grid-cols-2">
           <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2">
             <input
               type="radio"
@@ -332,185 +474,215 @@ export function NewOrderDetails({
         </div>
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Camisa</h2>
-        <input
-          type="hidden"
-          name="productMode"
-          value={entryMode === "quick" ? "custom" : productMode}
-        />
-
-        {entryMode === "quick" ? (
-          <div className="mt-4 space-y-3 rounded-2xl border border-neutral-200 p-4 text-sm text-neutral-600">
-            <input type="hidden" name="customName" value="Camisa de time sob encomenda" />
-            {quickItems.map((item, index) => (
-              <div
-                key={item.id}
-                className="space-y-3 rounded-2xl border border-neutral-200 bg-neutral-50 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-500">
-                    Modelo {index + 1}
-                  </p>
-                  {quickItems.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeQuickItem(item.id)}
-                      className="text-xs font-semibold text-red-600 hover:text-red-700"
-                    >
-                      Remover
-                    </button>
-                  )}
-                </div>
-                <input
-                  placeholder="Time (ex: Vitoria)"
-                  value={item.team}
-                  onChange={(event) => updateQuickItem(item.id, "team", event.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
-                />
-                <input
-                  placeholder="Modelo (ex: 2025 torcedor)"
-                  value={item.model}
-                  onChange={(event) => updateQuickItem(item.id, "model", event.target.value)}
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
-                />
-                <div className="grid gap-3 sm:grid-cols-5">
-                  {SHIRT_SIZES.map((shirtSize) => (
-                    <label
-                      key={shirtSize}
-                      className="rounded-2xl border border-neutral-200 bg-white px-3 py-3 text-sm text-neutral-600"
-                    >
-                      <span className="mb-2 block text-xs font-semibold uppercase tracking-[0.12em] text-neutral-500">
-                        {shirtSize}
-                      </span>
-                      <input
-                        type="number"
-                        min={0}
-                        value={item.sizeQuantities[shirtSize] ?? ""}
-                        onChange={(event) =>
-                          updateQuickItemSize(item.id, shirtSize, event.target.value)
-                        }
-                        className="w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-900"
-                      />
-                    </label>
-                  ))}
-                </div>
-                <input
-                  placeholder="Descricao curta (opcional)"
-                  value={item.description}
-                  onChange={(event) =>
-                    updateQuickItem(item.id, "description", event.target.value)
-                  }
-                  className="w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm"
-                />
-                {SHIRT_SIZES.map((shirtSize) => {
-                  const itemQuantity = parseNumber(item.sizeQuantities[shirtSize] ?? "");
-                  if (itemQuantity <= 0) return null;
-
-                  return (
-                    <div key={`${item.id}-${shirtSize}`}>
-                      <input type="hidden" name="quickItemTeam" value={item.team} />
-                      <input type="hidden" name="quickItemModel" value={item.model} />
-                      <input type="hidden" name="quickItemDescription" value={item.description} />
-                      <input type="hidden" name="quickItemSize" value={shirtSize} />
-                      <input type="hidden" name="quickItemQuantity" value={String(itemQuantity)} />
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={addQuickItem}
-              className="rounded-full border border-neutral-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700 hover:border-neutral-500"
-            >
-              Adicionar modelo
-            </button>
-            <p className="text-xs text-neutral-500">
-              Um unico pedido pode conter varios modelos, e cada modelo pode ter varios tamanhos
-              com quantidades diferentes. O sistema salva sem criar produto no catalogo.
-            </p>
-          </div>
-        ) : (
-          <div className="mt-4 space-y-3 text-sm text-neutral-600">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={productMode === "custom"}
-                onChange={() => setProductMode("custom")}
-              />
-              Pedido rapido (sem cadastro previo)
-            </label>
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
-              <input
-                name="customName"
-                placeholder="Nome da camisa"
-                defaultValue="Camisa de time sob encomenda"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="customTeam"
-                placeholder="Time (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="customModel"
-                placeholder="Modelo (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
-              <input
-                name="customDescription"
-                placeholder="Descricao (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-              />
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.42fr)_minmax(270px,0.78fr)] 2xl:grid-cols-[minmax(0,1.5fr)_minmax(300px,0.8fr)]">
+        <div className="space-y-5">
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Camisa</h2>
+              <span className={helperBadgeClassName}>Produto</span>
             </div>
+            <input
+              type="hidden"
+              name="productMode"
+              value={entryMode === "quick" ? "custom" : productMode}
+            />
 
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                checked={productMode === "existing"}
-                onChange={() => setProductMode("existing")}
-              />
-              Usar produto do catalogo
-            </label>
-            <select
-              name="productSlug"
-              value={productSlug}
-              onChange={(event) => setProductSlug(event.target.value)}
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-            >
-              <option value="">Selecione (opcional)</option>
-              {products.map((product) => (
-                <option key={product.id} value={product.slug}>
-                  {product.name} - R$ {product.basePrice.toFixed(2)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-      </section>
+            {entryMode === "quick" ? (
+              <div className="mt-3 space-y-2.5 rounded-2xl border border-neutral-200 p-3 text-sm text-neutral-600">
+                <input type="hidden" name="customName" value="Camisa de time sob encomenda" />
+                {quickItems.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="space-y-2.5 rounded-2xl border border-neutral-200 bg-neutral-50 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-[0.15em] text-neutral-500">
+                        Modelo {index + 1}
+                      </p>
+                      {quickItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeQuickItem(item.id)}
+                          className="text-xs font-semibold text-red-600 hover:text-red-700"
+                        >
+                          Remover
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid gap-2.5 md:grid-cols-2">
+                      <input
+                        placeholder="Time (ex: Vitoria)"
+                        value={item.team}
+                        onChange={(event) => updateQuickItem(item.id, "team", event.target.value)}
+                        className={fieldClassName}
+                      />
+                      <input
+                        placeholder="Modelo (ex: 2025 torcedor)"
+                        value={item.model}
+                        onChange={(event) => updateQuickItem(item.id, "model", event.target.value)}
+                        className={fieldClassName}
+                      />
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-5">
+                      {SHIRT_SIZES.map((shirtSize) => (
+                        <label
+                          key={shirtSize}
+                          className="rounded-xl border border-neutral-200 bg-white px-2.5 py-2 text-sm text-neutral-600"
+                        >
+                          <span className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-500">
+                            {shirtSize}
+                          </span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            value={item.sizeQuantities[shirtSize] ?? ""}
+                            onChange={(event) =>
+                              updateQuickItemSize(
+                                item.id,
+                                shirtSize,
+                                sanitizeNumericInput(event.target.value),
+                              )
+                            }
+                            className={`${compactFieldClassName} text-center`}
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <input
+                      placeholder="Descricao curta (opcional)"
+                      value={item.description}
+                      onChange={(event) =>
+                        updateQuickItem(item.id, "description", event.target.value)
+                      }
+                      className={fieldClassName}
+                    />
+                    {SHIRT_SIZES.map((shirtSize) => {
+                      const itemQuantity = parseNumber(item.sizeQuantities[shirtSize] ?? "");
+                      if (itemQuantity <= 0) return null;
 
-      <section>
-        <h2 className="text-lg font-semibold">Pedido</h2>
-        <div className="mt-4 grid gap-4">
+                      return (
+                        <div key={`${item.id}-${shirtSize}`}>
+                          <input type="hidden" name="quickItemTeam" value={item.team} />
+                          <input type="hidden" name="quickItemModel" value={item.model} />
+                          <input type="hidden" name="quickItemDescription" value={item.description} />
+                          <input type="hidden" name="quickItemSize" value={shirtSize} />
+                          <input type="hidden" name="quickItemQuantity" value={String(itemQuantity)} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={addQuickItem}
+                    className="rounded-full border border-neutral-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-neutral-700 hover:border-neutral-500"
+                  >
+                    Adicionar modelo
+                  </button>
+                  <p className="text-xs text-neutral-500">
+                    Varios modelos e tamanhos no mesmo pedido, sem criar item no catalogo.
+                  </p>
+                </div>
+              </div>
+            ) : (
+                <div className="mt-3 space-y-2.5 text-sm text-neutral-600">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={productMode === "custom"}
+                    onChange={() => setProductMode("custom")}
+                  />
+                  Pedido rapido (sem cadastro previo)
+                </label>
+                <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3 md:grid-cols-2">
+                  <input
+                    name="customName"
+                    placeholder="Nome da camisa"
+                    defaultValue="Camisa de time sob encomenda"
+                    className={fieldClassName}
+                  />
+                  <input
+                    name="customTeam"
+                    placeholder="Time (opcional)"
+                    className={fieldClassName}
+                  />
+                  <input
+                    name="customModel"
+                    placeholder="Modelo (opcional)"
+                    className={fieldClassName}
+                  />
+                  <input
+                    name="customDescription"
+                    placeholder="Descricao (opcional)"
+                    className={fieldClassName}
+                  />
+                </div>
+
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    checked={productMode === "existing"}
+                    onChange={() => setProductMode("existing")}
+                  />
+                  Usar produto do catalogo
+                </label>
+                <select
+                  name="productSlug"
+                  value={productSlug}
+                  onChange={(event) => setProductSlug(event.target.value)}
+                  className={fieldClassName}
+                >
+                  <option value="">Selecione (opcional)</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.slug}>
+                      {product.name} - R$ {product.basePrice.toFixed(2)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </section>
+
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Pedido</h2>
+              <span className={helperBadgeClassName}>Financeiro</span>
+            </div>
+            <div className="mt-3 grid gap-3">
           {entryMode === "quick" ? (
             <>
               <input type="hidden" name="size" value="M" />
               <input type="hidden" name="quantity" value={String(quantityValue)} />
-              <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                Modelos no pedido: <span className="font-semibold">{quickItems.length}</span>
-                <br />
-                Modelos validos: <span className="font-semibold">{validQuickModels.length}</span>
-                <br />
-                Quantidade total: <span className="font-semibold">{quantityValue} camisa(s)</span>
-              </p>
+                  <div className="grid gap-2.5 md:grid-cols-3">
+                    <p className={summaryStatCardClassName}>
+                      Modelos no pedido
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">{quickItems.length}</span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Modelos validos
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        {validQuickModels.length}
+                      </span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Quantidade total
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        {quantityValue} camisa(s)
+                      </span>
+                    </p>
+                  </div>
             </>
           ) : (
-            <>
+                <div className="grid gap-2.5 md:grid-cols-2">
               <select
                 name="size"
                 defaultValue="M"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
                 {SHIRT_SIZES.map((shirtSize) => (
                   <option key={shirtSize} value={shirtSize}>
@@ -524,39 +696,62 @@ export function NewOrderDetails({
                 min={1}
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
-            </>
+                </div>
           )}
-          <input
-            name="orderTotal"
-            type="number"
-            step="0.01"
-            placeholder="Valor vendido total (R$)"
-            value={orderTotalInput}
-            onChange={(event) => setOrderTotalInput(event.target.value)}
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
-          <input type="hidden" name="amountPaidSource" value={syncSource} />
-          <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-            Valor vendido total:{" "}
-            <span className="font-semibold">R$ {formatMoney(totalOrder)}</span>
-            <br />
-            Valor medio por camisa:{" "}
-            <span className="font-semibold">R$ {formatMoney(effectiveUnitPrice)}</span>
-          </p>
+              <div className="grid gap-2.5 md:grid-cols-3">
+                <input
+                  name="orderTotal"
+                  type="number"
+                  step="0.01"
+                  placeholder="Valor vendido total (R$)"
+                  value={orderTotalInput}
+                  onChange={(event) => setOrderTotalInput(event.target.value)}
+                  className="md:col-span-2 w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+                />
+                <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600">
+                  Valor medio
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(effectiveUnitPrice)}
+                  </span>
+                </div>
+              </div>
+              <input type="hidden" name="unitPrice" value={formatMoney(effectiveUnitPrice)} />
+              <input type="hidden" name="amountPaidSource" value={syncSource} />
+              <div className="grid gap-2.5 md:grid-cols-3">
+                <p className={summaryStatCardClassName}>
+                  Valor vendido
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(totalOrder)}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Valor medio por camisa
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(effectiveUnitPrice)}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Quantidade calculada
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">{quantityValue}</span>
+                </p>
+              </div>
           {!isPersonalUse && !isStockOrder ? (
-            <>
+                <div className="grid gap-2.5 md:grid-cols-3">
               <select
                 name="paymentType"
                 value={paymentType}
                 onChange={(event) => handlePaymentTypeChange(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
-                <option value="DEPOSIT_50">50% do valor</option>
-                <option value="FULL">100% do valor</option>
-                <option value="NONE">Apenas reserva</option>
+                <option value={PaymentType.Deposit50}>50% do valor</option>
+                <option value={PaymentType.Full}>100% do valor</option>
+                <option value={PaymentType.None}>Apenas reserva</option>
               </select>
               <input
                 name="amountPaidPercent"
@@ -565,7 +760,7 @@ export function NewOrderDetails({
                 placeholder="% pago"
                 value={syncSource === "percent" ? amountPaidPercentInput : syncedPaid.percent}
                 onChange={(event) => syncAmountFromPercent(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="amountPaid"
@@ -574,27 +769,28 @@ export function NewOrderDetails({
                 placeholder="Valor pago"
                 value={syncSource === "amount" ? amountPaidInput : syncedPaid.amount}
                 onChange={(event) => syncPercentFromAmount(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
-            </>
+                </div>
           ) : (
             <>
-              <input type="hidden" name="paymentType" value="NONE" />
+              <input type="hidden" name="paymentType" value={PaymentType.None} />
               <input type="hidden" name="amountPaidPercent" value="0" />
               <input type="hidden" name="amountPaid" value="0" />
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
                 {isPersonalUse
                   ? "Uso pessoal ativo: pedido fica fora de faturamento e lucro."
                   : "Pedido para estoque: sem venda registrada no momento."}
               </p>
             </>
           )}
-          <textarea
-            name="notes"
-            placeholder="Observacoes internas"
-            className="min-h-[96px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+              <textarea
+                name="notes"
+                placeholder="Observacoes internas"
+                className="min-h-[72px] w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
+              />
+              <div className="grid gap-2.5 md:grid-cols-2">
+                <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600">
             <input
               name="isPersonalUse"
               type="checkbox"
@@ -603,14 +799,14 @@ export function NewOrderDetails({
                 const checked = event.target.checked;
                 setIsPersonalUse(checked);
                 if (checked) setIsStockOrder(false);
-                if (checked && packageMode === "internal_stock") {
-                  setPackageMode("none");
+                if (checked && packageMode === PackageMode.InternalStock) {
+                  setPackageMode(PackageMode.None);
                 }
               }}
             />
             Uso pessoal (nao entra em faturamento e lucro)
-          </label>
-          <label className="flex items-center gap-2 rounded-2xl border border-neutral-200 px-4 py-3 text-sm text-neutral-600">
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600">
             <input
               name="isStockOrder"
               type="checkbox"
@@ -619,70 +815,80 @@ export function NewOrderDetails({
                 const checked = event.target.checked;
                 setIsStockOrder(checked);
                 if (checked) setIsPersonalUse(false);
-                if (checked && packageMode === "internal_stock") {
-                  setPackageMode("new");
+                if (checked && packageMode === PackageMode.InternalStock) {
+                  setPackageMode(PackageMode.New);
                 }
               }}
             />
             Pedido para estoque (sem venda ao cliente)
-          </label>
-        </div>
-      </section>
+                </label>
+              </div>
+            </div>
+          </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Pacote de importacao</h2>
-        <div className="mt-4 space-y-4">
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Pacote de importacao</h2>
+              <span className={helperBadgeClassName}>Logistica</span>
+            </div>
+            <div className="mt-3 space-y-3">
           <input type="hidden" name="packageMode" value={packageMode} />
           <input type="hidden" name="stockSourceOrderId" value={stockSourceOrderId} />
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+              <div className="grid gap-2.5 md:grid-cols-2">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
-              value="new"
-              checked={packageMode === "new"}
-              onChange={() => setPackageMode("new")}
+              value={PackageMode.New}
+              checked={packageMode === PackageMode.New}
+              onChange={() => setPackageMode(PackageMode.New)}
             />
             Criar novo pacote para este pedido
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
-              value="existing"
-              checked={packageMode === "existing"}
-              onChange={() => setPackageMode("existing")}
+              value={PackageMode.Existing}
+              checked={packageMode === PackageMode.Existing}
+              onChange={() => setPackageMode(PackageMode.Existing)}
             />
             Vincular a pacote existente
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
-              value="internal_stock"
-              checked={packageMode === "internal_stock"}
+              value={PackageMode.InternalStock}
+              checked={packageMode === PackageMode.InternalStock}
               onChange={() => {
-                setPackageMode("internal_stock");
+                setPackageMode(PackageMode.InternalStock);
                 setIsPersonalUse(false);
                 setIsStockOrder(false);
               }}
             />
             Baixar do estoque interno
           </label>
-          <label className="flex items-center gap-2 text-sm text-neutral-600">
+          <label className="flex items-center gap-2 rounded-xl border border-neutral-200 px-3 py-2.5 text-sm text-neutral-600 transition hover:border-neutral-300">
             <input
               type="radio"
               name="packageModeOption"
-              value="none"
-              checked={packageMode === "none"}
-              onChange={() => setPackageMode("none")}
+              value={PackageMode.None}
+              checked={packageMode === PackageMode.None}
+              onChange={() => setPackageMode(PackageMode.None)}
             />
             Sem pacote (pedido isolado)
           </label>
+              </div>
 
-          {packageMode === "internal_stock" && (
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
-              {internalStockOrders.length === 0 ? (
-                <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+          {packageMode === PackageMode.InternalStock && (
+            <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3">
+              {internalStockLoading ? (
+                <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600">
+                  Carregando pedidos de estoque...
+                </p>
+              ) : internalStockOrders.length === 0 ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-700">
                   Nenhum pedido de estoque com saldo e custo unitario disponivel.
                 </p>
               ) : (
@@ -690,7 +896,7 @@ export function NewOrderDetails({
                   <select
                     value={stockSourceOrderId}
                     onChange={(event) => setStockSourceOrderId(event.target.value)}
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   >
                     {internalStockOrders.map((stockOrder) => (
                       <option key={stockOrder.id} value={stockOrder.id}>
@@ -700,28 +906,40 @@ export function NewOrderDetails({
                     ))}
                   </select>
                   {selectedInternalStockOrder && (
-                    <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                      Fornecedor:{" "}
-                      <span className="font-semibold">{selectedInternalStockOrder.supplierName}</span>
-                      <br />
-                      Custo unitario herdado:{" "}
-                      <span className="font-semibold">
-                        R$ {formatMoney(selectedInternalStockOrder.unitCost)}
-                      </span>
-                      <br />
-                      Saldo disponivel:{" "}
-                      <span className="font-semibold">
-                        {selectedInternalStockOrder.availableQuantity} camisa(s)
-                      </span>
-                      <br />
-                      {selectedInternalStockOrder.packageCode
-                        ? `Origem: pacote ${selectedInternalStockOrder.packageCode}`
-                        : "Origem: pedido de estoque sem pacote vinculado"}
-                    </p>
+                        <div className="grid gap-2.5 md:grid-cols-3">
+                          <p className={summaryStatCardClassName}>
+                            Fornecedor
+                            <br />
+                            <span className="text-sm font-semibold text-neutral-950">
+                              {selectedInternalStockOrder.supplierName}
+                            </span>
+                          </p>
+                          <p className={summaryStatCardClassName}>
+                            Custo unitario herdado
+                            <br />
+                            <span className="text-sm font-semibold text-neutral-950">
+                              R$ {formatMoney(selectedInternalStockOrder.unitCost)}
+                            </span>
+                          </p>
+                          <p className={summaryStatCardClassName}>
+                            Saldo disponivel
+                            <br />
+                            <span className="text-sm font-semibold text-neutral-950">
+                              {selectedInternalStockOrder.availableQuantity} camisa(s)
+                            </span>
+                          </p>
+                        </div>
                   )}
+                      {selectedInternalStockOrder && (
+                        <p className="text-xs text-neutral-500">
+                          {selectedInternalStockOrder.packageCode
+                            ? `Origem: pacote ${selectedInternalStockOrder.packageCode}`
+                            : "Origem: pedido de estoque sem pacote vinculado"}
+                        </p>
+                      )}
                   {selectedInternalStockOrder &&
                     selectedInternalStockOrder.availableQuantity < quantityValue && (
-                      <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">
+                      <p className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
                         Quantidade do pedido ({quantityValue}) maior que o saldo disponivel (
                         {selectedInternalStockOrder.availableQuantity}).
                       </p>
@@ -735,14 +953,16 @@ export function NewOrderDetails({
             </div>
           )}
 
-          {packageMode === "existing" && (
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+          {packageMode === PackageMode.Existing && (
+            <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3">
               <select
                 name="existingPackageId"
                 value={existingPackageId}
+                disabled={packagesLoading}
                 onChange={(event) => setExistingPackageId(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
+                {packagesLoading && <option value="">Carregando pacotes...</option>}
                 {packages.length === 0 && <option value="">Nenhum pacote cadastrado</option>}
                 {packages.map((importPackage) => (
                   <option key={importPackage.id} value={importPackage.id}>
@@ -754,19 +974,23 @@ export function NewOrderDetails({
                   </option>
                 ))}
               </select>
+              {packagesLoading && (
+                <p className="text-xs text-neutral-500">Carregando pacotes existentes...</p>
+              )}
               <p className="text-xs text-neutral-500">
                 Ao vincular, o custo por camisa e o rastreio serao herdados automaticamente.
               </p>
             </div>
           )}
 
-          {packageMode === "new" && (
-            <div className="grid gap-3 rounded-2xl border border-neutral-200 p-4">
+          {packageMode === PackageMode.New && (
+            <div className="grid gap-2.5 rounded-2xl border border-neutral-200 p-3">
+              <div className="grid gap-2.5 md:grid-cols-2">
               <select
                 name="supplierId"
                 value={supplierId}
                 onChange={(event) => setSupplierId(event.target.value)}
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               >
                 {suppliers.length === 0 && <option value="">Sem fornecedor cadastrado</option>}
                 {suppliers.map((supplier) => (
@@ -783,7 +1007,7 @@ export function NewOrderDetails({
                 value={packageQuantityInput}
                 onChange={(event) => setPackageQuantityInput(event.target.value)}
                 placeholder="Qtd total de camisas no pacote"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="productCost"
@@ -793,13 +1017,14 @@ export function NewOrderDetails({
                 value={productCostInput}
                 onChange={(event) => setProductCostInput(event.target.value)}
                 placeholder="Valor pago ao fornecedor (R$)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="trackingCode"
                 placeholder="Codigo de rastreio (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
+              </div>
               <label className="flex items-center gap-2 text-sm text-neutral-600">
                 <input
                   type="checkbox"
@@ -810,7 +1035,7 @@ export function NewOrderDetails({
               </label>
 
               {(showPackageAdvanced || entryMode === "advanced") && (
-                <>
+                <div className="grid gap-2.5 md:grid-cols-2">
                   <input
                     name="extraFees"
                     type="number"
@@ -819,7 +1044,7 @@ export function NewOrderDetails({
                     value={extraFeesInput}
                     onChange={(event) => setExtraFeesInput(event.target.value)}
                     placeholder="Taxa de importacao (R$)"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="internalShipping"
@@ -829,30 +1054,30 @@ export function NewOrderDetails({
                     value={internalShippingInput}
                     onChange={(event) => setInternalShippingInput(event.target.value)}
                     placeholder="Frete interno (R$)"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="carrier"
                     placeholder="Transportadora (17track, opcional)"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="originCountry"
                     defaultValue="China"
                     placeholder="Pais de origem"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <input
                     name="paidAt"
                     type="date"
-                    className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className={fieldClassName}
                   />
                   <textarea
                     name="packageNotes"
                     placeholder="Observacoes do pacote"
-                    className="min-h-[80px] w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                    className="min-h-[72px] md:col-span-2 w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
                   />
-                </>
+                </div>
               )}
 
               {!showPackageAdvanced && entryMode === "quick" && (
@@ -865,34 +1090,118 @@ export function NewOrderDetails({
                   <input type="hidden" name="packageNotes" value="" />
                 </>
               )}
-              <p className="rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-xs text-neutral-600">
-                Custo final do pacote:{" "}
-                <span className="font-semibold">
-                  R$ {formatMoney(packageSummary.packageFinalCost)}
-                </span>
-                <br />
-                Custo medio por camisa:{" "}
-                <span className="font-semibold">
-                  R$ {formatMoney(packageSummary.averageUnitCost)}
-                </span>
-                <br />
-                Custo alocado neste pedido:{" "}
-                <span className="font-semibold">
-                  R$ {formatMoney(packageSummary.allocatedCost)}
-                </span>
-              </p>
+                  <div className="grid gap-2.5 md:grid-cols-3">
+                    <p className={summaryStatCardClassName}>
+                      Custo final do pacote
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        R$ {formatMoney(packageSummary.packageFinalCost)}
+                      </span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Custo medio por camisa
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        R$ {formatMoney(packageSummary.averageUnitCost)}
+                      </span>
+                    </p>
+                    <p className={summaryStatCardClassName}>
+                      Custo alocado neste pedido
+                      <br />
+                      <span className="text-sm font-semibold text-neutral-950">
+                        R$ {formatMoney(packageSummary.allocatedCost)}
+                      </span>
+                    </p>
+                  </div>
             </div>
           )}
+            </div>
+          </section>
         </div>
-      </section>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-4 self-start xl:sticky xl:top-4">
+          <section className={sectionCardClassName}>
+            <div className="flex items-center justify-between">
+              <h2 className={sectionTitleClassName}>Resumo Final</h2>
+              <span className={helperBadgeClassName}>Checklist</span>
+            </div>
+            <div className="mt-3 grid gap-2.5">
+              <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-1">
+                <p className={summaryStatCardClassName}>
+                  Tipo efetivo do pedido
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.orderType}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Regra financeira
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.revenueMode}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Origem do custo
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.packageModeLabel}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Fonte selecionada
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {effectiveFlowSummary.packageDetail}
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Quantidade final
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    {quantityValue} camisa(s)
+                  </span>
+                </p>
+                <p className={summaryStatCardClassName}>
+                  Total previsto
+                  <br />
+                  <span className="text-sm font-semibold text-neutral-950">
+                    R$ {formatMoney(totalOrder)}
+                  </span>
+                </p>
+                {!isPersonalUse && !isStockOrder && (
+                  <p className={summaryStatCardClassName}>
+                    Valor de entrada
+                    <br />
+                    <span className="text-sm font-semibold text-neutral-950">
+                      R$ {syncedPaid.amount} ({syncedPaid.percent}%)
+                    </span>
+                  </p>
+                )}
+              </div>
+              {effectiveFlowSummary.primaryWarning ? (
+                <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-800">
+                  Revise antes de criar: {effectiveFlowSummary.primaryWarning}
+                </p>
+              ) : (
+                <p className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-800">
+                  Fluxo consistente: o pedido esta pronto para ser criado com as regras acima.
+                </p>
+              )}
+            </div>
+          </section>
+
+          <div className="grid gap-2.5">
         <SubmitButton
           pendingLabel="Criando pedido..."
           className="w-full"
           name="afterSubmit"
           value="open"
-          disabled={(entryMode === "quick" && quantityValue <= 0) || !stockAllocationAvailable}
+          disabled={
+            (entryMode === "quick" && quantityValue <= 0) ||
+            !stockAllocationAvailable ||
+            auxiliaryOptionsLoading
+          }
         >
           Criar e abrir pedido
         </SubmitButton>
@@ -902,10 +1211,16 @@ export function NewOrderDetails({
           variant="outline"
           name="afterSubmit"
           value="new"
-          disabled={(entryMode === "quick" && quantityValue <= 0) || !stockAllocationAvailable}
+          disabled={
+            (entryMode === "quick" && quantityValue <= 0) ||
+            !stockAllocationAvailable ||
+            auxiliaryOptionsLoading
+          }
         >
           Criar e novo
         </SubmitButton>
+          </div>
+        </div>
       </div>
     </div>
   );

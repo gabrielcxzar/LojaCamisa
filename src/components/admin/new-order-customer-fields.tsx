@@ -2,18 +2,28 @@
 
 import { useMemo, useState } from "react";
 
-import type { CustomerPresetRow } from "@/lib/db/queries";
-
-type Props = {
-  presets: CustomerPresetRow[];
+type CustomerPresetOption = {
+  name: string;
+  email: string | null;
+  phone: string | null;
+  line1: string;
+  line2: string | null;
+  city: string;
+  state: string;
+  postal_code: string | null;
+  country: string;
+  last_order_at: string;
 };
 
-function presetLabel(preset: CustomerPresetRow) {
+const fieldClassName =
+  "w-full rounded-xl border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]";
+
+function presetLabel(preset: CustomerPresetOption) {
   const contact = preset.phone || preset.email || "sem contato";
   return `${preset.name} - ${contact}`;
 }
 
-export function NewOrderCustomerFields({ presets }: Props) {
+export function NewOrderCustomerFields() {
   const [selectedPresetLabel, setSelectedPresetLabel] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -25,14 +35,36 @@ export function NewOrderCustomerFields({ presets }: Props) {
   const [postalCode, setPostalCode] = useState("");
   const [country, setCountry] = useState("Brasil");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [presets, setPresets] = useState<CustomerPresetOption[]>([]);
+  const [presetsLoaded, setPresetsLoaded] = useState(false);
+  const [loadingPresets, setLoadingPresets] = useState(false);
 
   const presetMap = useMemo(() => {
-    const map = new Map<string, CustomerPresetRow>();
+    const map = new Map<string, CustomerPresetOption>();
     for (const preset of presets) {
       map.set(presetLabel(preset), preset);
     }
     return map;
   }, [presets]);
+
+  async function ensurePresetsLoaded() {
+    if (presetsLoaded || loadingPresets) return;
+
+    setLoadingPresets(true);
+    try {
+      const response = await fetch("/api/admin/new-order-options?kind=customer-presets", {
+        method: "GET",
+        cache: "no-store",
+      });
+      if (!response.ok) return;
+
+      const data = (await response.json()) as { presets?: CustomerPresetOption[] };
+      setPresets(data.presets ?? []);
+      setPresetsLoaded(true);
+    } finally {
+      setLoadingPresets(false);
+    }
+  }
 
   function applyPreset(label: string) {
     const preset = presetMap.get(label);
@@ -50,20 +82,26 @@ export function NewOrderCustomerFields({ presets }: Props) {
   }
 
   return (
-    <div className="space-y-8">
-      <section>
-        <h2 className="text-lg font-semibold">Cliente</h2>
-        <div className="mt-4 grid gap-3">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Cliente</h2>
+        <div className="grid gap-2.5">
           <input
             list="customer-presets"
             value={selectedPresetLabel}
+            onFocus={() => {
+              void ensurePresetsLoaded();
+            }}
             onChange={(event) => {
               const next = event.target.value;
+              if (!presetsLoaded && !loadingPresets) {
+                void ensurePresetsLoaded();
+              }
               setSelectedPresetLabel(next);
               applyPreset(next);
             }}
             placeholder="Buscar cliente salvo"
-            className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm"
+            className="w-full rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-950 placeholder:text-neutral-400 [color-scheme:light]"
           />
           <datalist id="customer-presets">
             {presets.map((preset) => {
@@ -71,23 +109,32 @@ export function NewOrderCustomerFields({ presets }: Props) {
               return <option key={`${preset.name}-${preset.phone}-${preset.last_order_at}`} value={label} />;
             })}
           </datalist>
+          {(loadingPresets || presetsLoaded) && (
+            <p className="text-xs text-neutral-500">
+              {loadingPresets
+                ? "Carregando clientes salvos..."
+                : `${presets.length} cliente(s) salvo(s) disponiveis para preenchimento rapido.`}
+            </p>
+          )}
 
-          <input
-            name="name"
-            required
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder="Nome completo"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
-          <input
-            name="phone"
-            required
-            value={phone}
-            onChange={(event) => setPhone(event.target.value)}
-            placeholder="Telefone / WhatsApp"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
-          />
+          <div className="grid gap-2.5 md:grid-cols-2">
+            <input
+              name="name"
+              required
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Nome completo"
+              className={fieldClassName}
+            />
+            <input
+              name="phone"
+              required
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="Telefone / WhatsApp"
+              className={fieldClassName}
+            />
+          </div>
 
           <label className="flex items-center gap-2 text-sm text-neutral-600">
             <input
@@ -99,53 +146,53 @@ export function NewOrderCustomerFields({ presets }: Props) {
           </label>
 
           {showAdvanced && (
-            <>
+            <div className="grid gap-2.5 md:grid-cols-3">
               <input
                 name="email"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 placeholder="Email (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="line2"
                 value={line2}
                 onChange={(event) => setLine2(event.target.value)}
                 placeholder="Complemento (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
               <input
                 name="postalCode"
                 value={postalCode}
                 onChange={(event) => setPostalCode(event.target.value)}
                 placeholder="CEP (opcional)"
-                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+                className={fieldClassName}
               />
-            </>
+            </div>
           )}
         </div>
       </section>
 
-      <section>
-        <h2 className="text-lg font-semibold">Destino</h2>
-        <div className="mt-4 grid gap-4">
+      <section className="space-y-3">
+        <h2 className="text-base font-semibold">Destino</h2>
+        <div className="grid gap-2.5">
           <input
             name="line1"
             required
             value={line1}
             onChange={(event) => setLine1(event.target.value)}
             placeholder="Rua e numero"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+            className={fieldClassName}
           />
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-2.5 md:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
             <input
               name="city"
               required
               value={city}
               onChange={(event) => setCity(event.target.value)}
               placeholder="Cidade"
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              className={fieldClassName}
             />
             <input
               name="state"
@@ -153,7 +200,7 @@ export function NewOrderCustomerFields({ presets }: Props) {
               value={state}
               onChange={(event) => setState(event.target.value)}
               placeholder="Estado"
-              className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+              className={fieldClassName}
             />
           </div>
           <input
@@ -161,7 +208,7 @@ export function NewOrderCustomerFields({ presets }: Props) {
             value={country}
             onChange={(event) => setCountry(event.target.value)}
             placeholder="Pais"
-            className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm"
+            className={fieldClassName}
           />
         </div>
       </section>

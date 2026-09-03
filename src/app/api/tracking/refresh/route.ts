@@ -15,15 +15,10 @@ import {
   mapTrackingStatusToOrderStatus,
   shouldAdvanceOrderStatus,
 } from "@/lib/tracking/status-map";
+import { toPositiveInt } from "@/lib/tracking/helpers";
 
 const UUID_V4_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function toPositiveInt(input: string | undefined, fallback: number) {
-  const value = Number(input);
-  if (!Number.isFinite(value) || value <= 0) return fallback;
-  return Math.floor(value);
-}
 
 export async function POST(request: Request) {
   try {

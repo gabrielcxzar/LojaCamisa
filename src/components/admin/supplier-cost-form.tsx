@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import {
+  calculateMargin,
+  calculatePackageCosts,
+} from "@/modules/shared/domain/calculators";
 import { SubmitButton } from "@/components/ui/submit-button";
 
 type SupplierOption = {
@@ -114,21 +118,29 @@ export function SupplierCostForm({
       ? Math.max(0, internalStockAllocation?.totalCost ?? 0)
       : Math.max(0, toNumber(productCostInput));
     const extraFees = lockedByInternalStock ? 0 : Math.max(0, toNumber(extraFeesInput));
-    const packageFinalCost = productCost + extraFees;
+    const packageCosts = calculatePackageCosts({
+      packageQuantity,
+      productCost,
+      extraFees,
+      orderQuantity: Math.max(1, orderQuantity),
+    });
     const averageUnitCost = lockedByInternalStock
       ? Math.max(0, internalStockAllocation?.unitCost ?? 0)
-      : packageFinalCost / packageQuantity;
+      : packageCosts.averageUnitCost;
     const totalOrderCost = lockedByInternalStock
       ? Math.max(0, internalStockAllocation?.totalCost ?? 0)
-      : averageUnitCost * Math.max(1, orderQuantity);
+      : packageCosts.allocatedCost;
     const noRevenueMode = personalUseChecked || stockOrderChecked;
-    const estimatedProfit = noRevenueMode ? 0 : sold - totalOrderCost;
-    const margin = !noRevenueMode && sold > 0 ? (estimatedProfit / sold) * 100 : 0;
+    const { profit: estimatedProfit, margin } = calculateMargin({
+      revenue: sold,
+      cost: totalOrderCost,
+      noRevenueMode,
+    });
 
     return {
       sold,
       packageQuantity,
-      packageFinalCost,
+      packageFinalCost: packageCosts.packageFinalCost,
       averageUnitCost,
       totalOrderCost,
       estimatedProfit,

@@ -1,5 +1,3 @@
-export const dynamic = "force-dynamic";
-
 import Link from "next/link";
 
 import { Container } from "@/components/layout/container";
@@ -56,7 +54,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           Novo pedido
         </Link>
       </div>
-      <form className="grid gap-4 rounded-2xl border border-neutral-200 bg-white p-6 md:grid-cols-4">
+      <form className="grid gap-4 rounded-2xl border border-neutral-200 bg-white p-6 shadow-lg md:grid-cols-4">
         <input
           name="q"
           placeholder="Buscar por cliente"
@@ -92,7 +90,7 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           Aplicar filtros
         </button>
       </form>
-      <div className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-6">
+      <div className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-6 shadow-lg">
         {orders.length === 0 && (
           <p className="text-sm text-neutral-500">
             Nenhum pedido encontrado.
@@ -102,9 +100,11 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
           <Link
             key={order.id}
             href={`/admin/pedidos/${order.id}`}
-            className="flex items-center justify-between rounded-2xl border border-neutral-200 px-4 py-3 text-sm hover:border-neutral-400"
+            prefetch={false}
+            className="block w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm transition hover:border-neutral-400 hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           >
-            <div>
+            <div className="pointer-events-none grid gap-3 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
+              <div className="min-w-0">
               <p className="font-semibold">
                 {order.code} • {order.customer_name}
               </p>
@@ -123,8 +123,14 @@ export default async function OrdersPage({ searchParams }: OrdersPageProps) {
               {order.is_personal_use === 1 && (
                 <p className="text-xs text-amber-700">Uso pessoal (fora do financeiro)</p>
               )}
+              </div>
+              <Badge
+                tone="muted"
+                className="shrink-0 justify-self-start md:justify-self-end"
+              >
+                {statusLabel[order.status]}
+              </Badge>
             </div>
-            <Badge tone="muted">{statusLabel[order.status]}</Badge>
           </Link>
         ))}
       </div>
